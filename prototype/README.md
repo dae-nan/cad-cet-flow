@@ -1,10 +1,13 @@
 # CAD CET Flow Prototype
 
 ## Run
-Serve this folder and open in browser:
+Preferred:
 - `cd /Users/daenan/Code/delegations/prototype`
 - `python3 -m http.server 8080`
 - open `http://localhost:8080`
+
+Fallback behavior:
+- If you open `index.html` directly and JSON fetch fails, the app now loads embedded sample data and shows a warning banner.
 
 ## Routing state
 - `#/home` (default)
@@ -14,19 +17,14 @@ Serve this folder and open in browser:
 - `#/cad/:groupCadId/:country/:countryCadId/:sandboxId`
 
 ## Implemented updates
-- Homepage is default and independent from detail views.
-- Homepage includes direct status panels for:
-  - Group CADs
-  - Country CADs
-  - CETs
-  - Sandboxes
-- Hierarchical parent-child tree grid with counts (`CETs`, `SBX`) on country CAD rows.
-- Global search enabled across document types and fields:
-  - `ID`, `Name`, `Country`, `Owner`, plus product/segment text
-- Filters:
-  - Product, Client Segment, Cluster, Country, Status
-  - `My Docs` toggle based on user profile scope
-- Dynamic right issue panel retained with live blocker/error/warning updates.
+- Homepage default independent route.
+- Direct status panels for Group CADs, Country CADs, CETs, Sandboxes.
+- Cross-type global search across ID, name, country, owner.
+- Filters for product, client segment, cluster, country, status, and `My Docs` toggle.
+- Hierarchical parent-child grid with country-level CET/SBX counts.
+- Quick deep-link section to test individual Group, Country, CET, Sandbox routes.
+- Dynamic right issue panel retained (desktop rail/tablet drawer/mobile bottom sheet).
 
 ## Data
-- Hierarchy data source: `/Users/daenan/Code/delegations/prototype/data/sample-hierarchy.json`
+- Full sample hierarchy: `/Users/daenan/Code/delegations/prototype/data/sample-hierarchy.json`
+- Includes mixed states (`Active`, `In Flight`, `Completed`) across all entity types.

@@ -1,5 +1,26 @@
+const FALLBACK_DATA = {
+  userProfile: {
+    name: "Chief Credit Officer - South Asia",
+    cluster: "South Asia",
+    countries: ["India", "Bangladesh", "Pakistan", "Sri Lanka"]
+  },
+  groupCads: [
+    { id: "G-CAD-1001", name: "SME Programme Lending Framework", product: "SME Loans", clientSegment: "SME", cluster: "Global", owner: "Global Programme Lead", status: "Active" }
+  ],
+  countryCads: [
+    { id: "C-CAD-IN-01", groupCadId: "G-CAD-1001", country: "India", name: "India SME Lending Country CAD", product: "SME Loans", clientSegment: "SME", cluster: "South Asia", owner: "India Country CCO", status: "In Flight" }
+  ],
+  cets: [
+    { id: "CET-IN-201", countryCadId: "C-CAD-IN-01", groupCadId: "G-CAD-1001", country: "India", name: "Risk Trigger Tuning", product: "SME Loans", clientSegment: "SME", cluster: "South Asia", owner: "India Risk Manager", status: "Active", exposure: 62, cap: 100, result: "In Progress" }
+  ],
+  sandboxes: [
+    { id: "SBX-IN-901", countryCadId: "C-CAD-IN-01", groupCadId: "G-CAD-1001", country: "India", name: "Micro Segment Rule Pilot", product: "SME Loans", clientSegment: "SME", cluster: "South Asia", owner: "India Business Lead", status: "Active", limit: 5 }
+  ]
+};
+
 const state = {
   data: null,
+  loadWarning: "",
   route: { view: "home" },
   searchTerm: "",
   filters: {
@@ -243,10 +264,21 @@ function renderHome() {
     <td>${r.id}</td><td>${r.name}</td><td>${r.country || "Global"}</td><td>${r.product}</td><td>${r.status}</td><td>${r.owner}</td>
   </tr>`).join("");
 
+  const quickGroup = state.data.groupCads.slice(0, 3).map((g) =>
+    `<li><a href="${PATH.group(g.id)}">${g.id}</a> - ${g.name}</li>`).join("");
+  const quickCountry = state.data.countryCads.slice(0, 4).map((c) =>
+    `<li><a href="${PATH.country(c.groupCadId, c.country, c.id)}">${c.id}</a> - ${c.country}</li>`).join("");
+  const quickCet = state.data.cets.slice(0, 4).map((c) =>
+    `<li><a href="${PATH.detail(c.groupCadId, c.country, c.countryCadId, c.id)}">${c.id}</a> - ${c.name}</li>`).join("");
+  const quickSandbox = state.data.sandboxes.slice(0, 4).map((s) =>
+    `<li><a href="${PATH.detail(s.groupCadId, s.country, s.countryCadId, s.id)}">${s.id}</a> - ${s.name}</li>`).join("");
+
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Homepage</h2>
+      <p class="muted">Search works across CAD/CET/Sandbox IDs, names, country, and owner.</p>
       <p class="muted">Default landing view with hierarchy and direct status panels.</p>
+      ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
       <div class="panel-grid">
         ${panel("group", "Group CADs")}
         ${panel("country", "Country CADs")}
@@ -261,6 +293,18 @@ function renderHome() {
         <thead><tr><th>ID</th><th>Name</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th></tr></thead>
         <tbody>${selectedTable || '<tr><td colspan="6">No rows</td></tr>'}</tbody>
       </table>
+    </section>
+
+    <section class="card">
+      <h3>Quick Route Testing</h3>
+      <div class="split-two">
+        <div><h4>Group CADs</h4><ul>${quickGroup || "<li>None</li>"}</ul></div>
+        <div><h4>Country CADs</h4><ul>${quickCountry || "<li>None</li>"}</ul></div>
+      </div>
+      <div class="split-two">
+        <div><h4>CETs</h4><ul>${quickCet || "<li>None</li>"}</ul></div>
+        <div><h4>Sandboxes</h4><ul>${quickSandbox || "<li>None</li>"}</ul></div>
+      </div>
     </section>
 
     <section class="card">
@@ -285,6 +329,10 @@ function renderHome() {
 
 function renderGroupDetail() {
   const group = state.data.groupCads.find((g) => g.id === state.route.groupCadId);
+  if (!group) {
+    dom.viewRoot.innerHTML = '<section class="card"><h2>Group CAD not found</h2></section>';
+    return;
+  }
   const countries = applyCommonFilters(
     state.data.countryCads.filter((c) => c.groupCadId === state.route.groupCadId)
   );
@@ -311,6 +359,10 @@ function renderGroupDetail() {
 
 function renderCountryDetail() {
   const countryCad = state.data.countryCads.find((c) => c.id === state.route.countryCadId);
+  if (!countryCad) {
+    dom.viewRoot.innerHTML = '<section class="card"><h2>Country CAD not found</h2></section>';
+    return;
+  }
   const cets = applyCommonFilters(state.data.cets.filter((c) => c.countryCadId === countryCad.id));
   const sandboxes = applyCommonFilters(state.data.sandboxes.filter((s) => s.countryCadId === countryCad.id));
   const successful = state.data.cets.filter((c) => c.countryCadId === countryCad.id && c.result === "Successful");
@@ -638,8 +690,14 @@ function initEvents() {
 }
 
 async function init() {
-  const res = await fetch("data/sample-hierarchy.json");
-  state.data = await res.json();
+  try {
+    const res = await fetch("data/sample-hierarchy.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.data = await res.json();
+  } catch (_err) {
+    state.data = FALLBACK_DATA;
+    state.loadWarning = "Using embedded fallback sample data because external JSON could not be loaded. Run via local server for full dataset.";
+  }
   populateFilters();
   if (!window.location.hash) window.location.hash = PATH.home;
   initEvents();
