@@ -532,6 +532,7 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   .app-shell { grid-template-columns: 1fr; padding: 0.7rem; }
   .left-panel {
     position: static;
+    min-height: 0;
     max-height: 46vh;
     overflow: auto;
     padding: 0.65rem;
@@ -540,6 +541,8 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   .left-panel .menu-title { font-size: 0.78rem; }
   .left-panel.collapsed {
     width: 100%;
+    min-height: 0;
+    height: auto;
     max-height: none;
     overflow: visible;
     padding: 0.45rem;
