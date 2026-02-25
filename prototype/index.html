@@ -3,89 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CAD/CET Prototype - Dynamic Issue Panel</title>
+  <title>CAD CET Flow Prototype</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div>
-      <h1>Credit Approval Workspace</h1>
-      <p id="breadcrumb" class="breadcrumb">Home / CADs / CAD-7621 / CET / CET-104</p>
+      <h1>Credit Workspace</h1>
+      <p id="breadcrumb" class="breadcrumb">Home</p>
     </div>
-    <div class="actions">
+    <div class="actions" id="action-bar">
       <button id="save-btn" class="btn secondary">Save Draft</button>
       <button id="validate-btn" class="btn secondary">Validate</button>
       <button id="submit-btn" class="btn primary" disabled>Submit</button>
     </div>
   </header>
 
+  <section class="control-strip">
+    <div class="search-wrap">
+      <label for="global-search">Search</label>
+      <input id="global-search" type="text" placeholder="CAD/CET/Sandbox ID / Name, country, owner" />
+      <button id="search-reset" class="btn secondary small">Reset</button>
+    </div>
+    <div class="filter-wrap">
+      <label><input id="my-docs-toggle" type="checkbox" /> My Docs</label>
+      <select id="filter-product"><option value="">Product</option></select>
+      <select id="filter-segment"><option value="">Client Segment</option></select>
+      <select id="filter-cluster"><option value="">Cluster</option></select>
+      <select id="filter-country"><option value="">Country</option></select>
+      <select id="filter-status"><option value="">Status</option><option>Active</option><option>In Flight</option><option>Completed</option></select>
+    </div>
+  </section>
+
   <main id="app-shell" class="app-shell">
-    <aside class="left-panel">
-      <h2>Context</h2>
-      <nav>
-        <a href="#section-cad-home">Homepage</a>
-        <a href="#section-basic">CAD Details</a>
-        <a href="#section-cet">CET Under CAD</a>
-        <a href="#section-governance">Governance</a>
-      </nav>
-    </aside>
-
-    <section class="center-panel">
-      <section id="section-cad-home" class="card">
-        <h3>Homepage</h3>
-        <p>Current context: CAD-7621 with nested CET-104.</p>
-      </section>
-
-      <section id="section-basic" class="card">
-        <h3>CAD Basic Details</h3>
-        <div class="form-grid">
-          <label>Country
-            <input id="field-country" name="country" type="text" placeholder="Enter country" />
-          </label>
-          <label>Client Segment
-            <input id="field-clientSegment" name="clientSegment" type="text" placeholder="Enter segment" />
-          </label>
-          <label class="full">CAD Summary
-            <textarea id="field-summary" name="summary" rows="3" placeholder="Provide CAD summary"></textarea>
-          </label>
-        </div>
-      </section>
-
-      <section id="section-cet" class="card">
-        <h3>CET Details (Belongs to CAD-7621)</h3>
-        <div class="form-grid">
-          <label>CET Name
-            <input id="field-cetName" name="cetName" type="text" placeholder="Enter CET name" />
-          </label>
-          <label>Product
-            <input id="field-product" name="product" type="text" placeholder="PL, CC, SME..." />
-          </label>
-          <label>CET-101 Exposure
-            <input id="field-cetExposure1" name="cetExposure1" type="number" min="0" step="1" />
-          </label>
-          <label>CET-104 Exposure
-            <input id="field-cetExposure2" name="cetExposure2" type="number" min="0" step="1" />
-          </label>
-          <label>Aggregate Cap Limit
-            <input id="field-capLimit" name="capLimit" type="number" min="1" step="1" />
-          </label>
-        </div>
-      </section>
-
-      <section id="section-governance" class="card">
-        <h3>Governance Controls</h3>
-        <div class="form-grid">
-          <label class="full">Warning Rationale
-            <textarea id="field-rationale" name="rationale" rows="3" placeholder="Required when utilization is high"></textarea>
-          </label>
-          <label class="checkbox-row full">
-            <input id="field-warnAck" name="warnAck" type="checkbox" />
-            I acknowledge governance warning conditions.
-          </label>
-        </div>
-        <p id="utilization-line" class="muted">Utilization: --</p>
-      </section>
-    </section>
+    <aside class="left-panel" id="left-panel"></aside>
+    <section class="center-panel" id="view-root"></section>
 
     <aside id="issue-panel" class="issue-panel" aria-live="polite">
       <div class="issue-header">
@@ -95,14 +47,12 @@
         </div>
         <button id="close-panel" class="icon-btn" aria-label="Close">x</button>
       </div>
-
       <div class="filters">
         <button data-filter="all" class="filter active">All</button>
         <button data-filter="blockers" class="filter">Blockers</button>
         <button data-filter="errors" class="filter">Errors</button>
         <button data-filter="warnings" class="filter">Warnings</button>
       </div>
-
       <div id="resolved-banner" class="resolved-banner">All issues resolved</div>
       <ul id="issue-list" class="issue-list"></ul>
     </aside>
