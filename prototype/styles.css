@@ -87,6 +87,7 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
 .left-panel {
   background: var(--surface);
   border: 1px solid var(--line);
+  border-left: 4px solid var(--primary);
   border-radius: 12px;
   padding: 0.85rem;
   position: sticky;
