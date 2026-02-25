@@ -179,6 +179,8 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   gap: 0.2rem;
   padding-left: 0.6rem;
 }
+.side-rows.closed { display: none; }
+.side-rows.open { display: grid; }
 .side-row {
   border: 1px solid transparent;
   border-radius: 8px;
@@ -410,21 +412,48 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
 @media (max-width: 767px) {
   .topbar { flex-direction: column; align-items: stretch; }
   .app-shell { grid-template-columns: 1fr; padding: 0.7rem; }
-  .left-panel { position: static; }
+  .left-panel {
+    position: static;
+    max-height: 46vh;
+    overflow: auto;
+    padding: 0.65rem;
+  }
+  .left-panel .menu-item { padding: 0.3rem 0.35rem; }
+  .left-panel .menu-title { font-size: 0.78rem; }
+  .left-panel.collapsed {
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    padding: 0.45rem;
+  }
+  .left-panel.collapsed .icon-rail {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    justify-items: stretch;
+  }
+  .left-panel.collapsed .icon-pill {
+    width: 100%;
+    border-radius: 9px;
+  }
   .panel-grid { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: 1fr; }
   .form-grid,
   .split-two { grid-template-columns: 1fr; }
   .main-search-row input { min-width: 0; width: 100%; }
   .issue-panel {
+    position: static;
     right: auto;
     top: auto;
-    bottom: 0;
+    bottom: auto;
     width: 100%;
-    height: 54vh;
-    transform: translateY(100%);
+    height: auto;
+    max-height: none;
+    transform: none;
     border-top-left-radius: 16px;
     border-top-right-radius: 16px;
+    border-radius: 12px;
+    display: none;
   }
-  .issue-panel.open { transform: translateY(0); }
+  .issue-panel.open { display: block; transform: none; }
+  .drawer-backdrop,
+  .drawer-backdrop.show { display: none; }
 }

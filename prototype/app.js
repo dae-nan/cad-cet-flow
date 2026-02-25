@@ -51,6 +51,9 @@ const state = {
   expandedCountries: new Set(),
   activeSectionId: "",
   sectionObserver: null,
+  lastRouteView: "home",
+  mobileSectionsOpen: false,
+  mobileTraceOpen: true,
   issueStore: {
     issues: [],
     summary: { blockers: 0, errors: 0, warnings: 0, total: 0 }
@@ -293,6 +296,7 @@ function renderHierarchyTable() {
 
 function renderLeftPanel() {
   const r = state.route;
+  const isMobile = window.matchMedia("(max-width: 767px)").matches;
   const allDocs = [
     ...state.data.groupCads,
     ...state.data.countryCads,
@@ -309,7 +313,7 @@ function renderLeftPanel() {
   const parentType = (type) => `
     <button class="menu-item ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all">${entityTitle(type)}</button>`;
   const statusRows = (type) => `
-    <div class="side-rows">
+    <div class="side-rows ${state.homeType === type ? "open" : "closed"}">
       ${rowStatus(type, "Active", "Active")}
       ${rowStatus(type, "In Flight", "In Flight")}
       ${rowStatus(type, "Completed", "Completed")}
@@ -333,16 +337,19 @@ function renderLeftPanel() {
     </div>
     <div class="menu-group">
       <p class="menu-title">Trace</p>
+      ${isMobile ? `<button class="menu-item mobile-toggle" data-mobile-toggle="trace">${state.mobileTraceOpen ? "Hide Trace" : "Show Trace"}</button>` : ""}
+      ${(!isMobile || state.mobileTraceOpen) ? `
       <div class="tree-dir">
         ${group ? `<a class="menu-item tree-node level-0 ${r.view === "group" ? "active" : ""}" href="${PATH.group(group.id)}">▾ ${group.name}</a>` : ""}
         ${countryCad ? `<a class="menu-item tree-node level-1 ${r.view === "country" ? "active" : ""}" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">▾ ${countryCad.country}</a>` : ""}
         ${countryCad ? `<a class="menu-item tree-node level-2 ${r.view === "country" ? "active" : ""}" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.name}</a>` : ""}
         ${child ? `<a class="menu-item tree-node level-3 ${(r.view === "cet" || r.view === "sandbox") ? "active" : ""}" href="${PATH.detail(group.id, countryCad.country, countryCad.id, child.id)}">${child.name}</a>` : ""}
-      </div>
+      </div>` : ""}
     </div>
     <div class="menu-group">
       <p class="menu-title">Sections</p>
-      ${detailSections.map((s) => `<a class="menu-item section-link ${state.activeSectionId === s.id ? "active" : ""}" data-section-id="${s.id}" href="#${s.id}">${s.label}</a>`).join("")}
+      ${isMobile ? `<button class="menu-item mobile-toggle" data-mobile-toggle="sections">${state.mobileSectionsOpen ? "Hide Sections" : "Show Sections"}</button>` : ""}
+      ${(!isMobile || state.mobileSectionsOpen) ? detailSections.map((s) => `<a class="menu-item section-link ${state.activeSectionId === s.id ? "active" : ""}" data-section-id="${s.id}" href="#${s.id}">${s.label}</a>`).join("") : ""}
     </div>`;
 
   const expanded = `
@@ -413,6 +420,14 @@ function renderLeftPanel() {
       state.quickView = el.dataset.quickView;
       if (state.route.view !== "home") window.location.hash = PATH.home;
       else render();
+    });
+  });
+
+  dom.leftPanel.querySelectorAll("[data-mobile-toggle]").forEach((el) => {
+    el.addEventListener("click", () => {
+      if (el.dataset.mobileToggle === "sections") state.mobileSectionsOpen = !state.mobileSectionsOpen;
+      if (el.dataset.mobileToggle === "trace") state.mobileTraceOpen = !state.mobileTraceOpen;
+      renderLeftPanel();
     });
   });
 }
@@ -787,10 +802,21 @@ function jumpToIssue(id) {
 
 function render() {
   state.route = parseRoute();
+  const isMobile = window.matchMedia("(max-width: 767px)").matches;
+  const routeChanged = state.lastRouteView !== state.route.view;
   if (state.route.view === "group") state.homeType = "group";
   if (state.route.view === "country") state.homeType = "country";
   if (state.route.view === "cet") state.homeType = "cet";
   if (state.route.view === "sandbox") state.homeType = "sandbox";
+  if (routeChanged) {
+    state.mobileSectionsOpen = false;
+    state.mobileTraceOpen = state.route.view !== "home";
+  }
+  if (isMobile) {
+    dom.leftPanel.classList.add("collapsed");
+  } else if (!dom.leftPanel.classList.contains("collapsed")) {
+    dom.leftPanel.classList.remove("collapsed");
+  }
   setBreadcrumb();
   renderLeftPanel();
 
@@ -806,6 +832,7 @@ function render() {
 
   recomputeIssues();
   renderIssuePanel();
+  state.lastRouteView = state.route.view;
 
   dom.viewRoot.querySelectorAll("input, textarea").forEach((el) => {
     el.addEventListener("input", () => {
