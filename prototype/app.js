@@ -12,6 +12,7 @@ const state = {
   data: null,
   loadWarning: "",
   route: { view: "home" },
+  homeViewMode: "home",
   searchTerm: "",
   filters: {
     myDocs: false,
@@ -23,6 +24,7 @@ const state = {
   },
   homeType: "group",
   homeStatus: "all",
+  quickView: "none",
   issueStore: {
     issues: [],
     summary: { blockers: 0, errors: 0, warnings: 0, total: 0 }
@@ -76,9 +78,17 @@ function uniqueValues(rows, key) {
 function applyCommonFilters(rows) {
   const term = state.searchTerm.trim().toLowerCase();
   return rows.filter((row) => {
-    if (state.filters.myDocs) {
+    const myDocsActive = state.filters.myDocs || state.quickView === "mydocs";
+    if (myDocsActive) {
       const p = state.data.userProfile;
       if (row.cluster !== p.cluster && !(p.countries || []).includes(row.country)) return false;
+    }
+    if (state.quickView === "needsaction") {
+      if (!(row.status === "In Flight" || row.status === "Active")) return false;
+    }
+    if (state.quickView === "governancealerts") {
+      const util = Number(row.exposure) / Math.max(1, Number(row.cap || 0));
+      if (!Number.isFinite(util) || util < 0.8) return false;
     }
     if (state.filters.product && row.product !== state.filters.product) return false;
     if (state.filters.clientSegment && row.clientSegment !== state.filters.clientSegment) return false;
@@ -141,11 +151,52 @@ function childCounts(countryCadId) {
 
 function renderLeftPanel() {
   const r = state.route;
+  const entityTitle = (type) => ({
+    group: "Group CADs",
+    country: "Country CADs",
+    cet: "CETs",
+    sandbox: "Sandboxes"
+  }[type] || type);
+
+  const statusButtons = (type) => `
+    <div class="side-statuses">
+      <button class="side-chip ${state.homeType === type && state.homeStatus === "all" ? "on" : ""}" data-home-type="${type}" data-home-status="all">All</button>
+      <button class="side-chip ${state.homeType === type && state.homeStatus === "Active" ? "on" : ""}" data-home-type="${type}" data-home-status="Active">Active</button>
+      <button class="side-chip ${state.homeType === type && state.homeStatus === "In Flight" ? "on" : ""}" data-home-type="${type}" data-home-status="In Flight">In Flight</button>
+      <button class="side-chip ${state.homeType === type && state.homeStatus === "Completed" ? "on" : ""}" data-home-type="${type}" data-home-status="Completed">Completed</button>
+    </div>`;
+
   const expanded = `
     <h2>Context</h2>
     <div class="context-block">
-      <a href="${PATH.home}">Homepage</a>
-      <a href="${PATH.home}" class="${r.view === "home" ? "active" : ""}">Hierarchy Explorer</a>
+      <button class="side-link ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
+      <button class="side-link ${state.homeViewMode === "hierarchy" ? "active" : ""}" data-home-view="hierarchy">Hierarchy Explorer</button>
+    </div>
+    <div class="context-block">
+      <h3>Document Filters</h3>
+      <div class="side-group">
+        <p class="side-head">${entityTitle("group")}</p>
+        ${statusButtons("group")}
+      </div>
+      <div class="side-group">
+        <p class="side-head">${entityTitle("country")}</p>
+        ${statusButtons("country")}
+      </div>
+      <div class="side-group">
+        <p class="side-head">${entityTitle("cet")}</p>
+        ${statusButtons("cet")}
+      </div>
+      <div class="side-group">
+        <p class="side-head">${entityTitle("sandbox")}</p>
+        ${statusButtons("sandbox")}
+      </div>
+    </div>
+    <div class="context-block">
+      <h3>Quick Views</h3>
+      <button class="side-link ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
+      <button class="side-link ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
+      <button class="side-link ${state.quickView === "needsaction" ? "active" : ""}" data-quick-view="needsaction">Needs Action</button>
+      <button class="side-link ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts</button>
     </div>
     <div class="context-block">
       <h3>Level</h3>
@@ -162,11 +213,11 @@ function renderLeftPanel() {
   const collapsed = `
     <div class="icon-rail">
       <button id="left-toggle" class="icon-pill" title="Expand">=</button>
-      <a href="${PATH.home}" title="Home">H</a>
-      <span title="Group">G</span>
-      <span title="Country">C</span>
-      <span title="CET">T</span>
-      <span title="Sandbox">S</span>
+      <button class="icon-pill ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" title="Home">🏠</button>
+      <button class="icon-pill ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="${state.homeStatus}" title="Group CADs">🗂</button>
+      <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="${state.homeStatus}" title="Country CADs">🌍</button>
+      <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="${state.homeStatus}" title="CETs">🧪</button>
+      <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="${state.homeStatus}" title="Sandboxes">🧱</button>
     </div>`;
 
   const isCollapsed = dom.leftPanel.classList.contains("collapsed");
@@ -179,6 +230,31 @@ function renderLeftPanel() {
       renderLeftPanel();
     });
   }
+
+  dom.leftPanel.querySelectorAll("[data-home-view]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.homeViewMode = el.dataset.homeView;
+      if (state.route.view !== "home") window.location.hash = PATH.home;
+      else render();
+    });
+  });
+
+  dom.leftPanel.querySelectorAll("[data-home-type]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.homeType = el.dataset.homeType;
+      state.homeStatus = el.dataset.homeStatus || state.homeStatus;
+      if (state.route.view !== "home") window.location.hash = PATH.home;
+      else render();
+    });
+  });
+
+  dom.leftPanel.querySelectorAll("[data-quick-view]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.quickView = el.dataset.quickView;
+      if (state.route.view !== "home") window.location.hash = PATH.home;
+      else render();
+    });
+  });
 }
 
 function renderHome() {
@@ -254,64 +330,72 @@ function renderHome() {
     <td>${r.id}</td><td>${r.name}</td><td>${r.country || "Global"}</td><td>${r.product}</td><td>${r.status}</td><td>${r.owner}</td>
   </tr>`).join("");
 
-  const quickGroup = state.data.groupCads.map((g) =>
-    `<li><a href="${PATH.group(g.id)}">${g.id}</a> - ${g.name}</li>`).join("");
-  const quickCountry = state.data.countryCads.map((c) =>
-    `<li><a href="${PATH.country(c.groupCadId, c.country, c.id)}">${c.id}</a> - ${c.country}</li>`).join("");
-  const quickCet = state.data.cets.map((c) =>
-    `<li><a href="${PATH.detail(c.groupCadId, c.country, c.countryCadId, c.id)}">${c.id}</a> - ${c.name}</li>`).join("");
-  const quickSandbox = state.data.sandboxes.map((s) =>
-    `<li><a href="${PATH.detail(s.groupCadId, s.country, s.countryCadId, s.id)}">${s.id}</a> - ${s.name}</li>`).join("");
+  const allRows = [...rows.group, ...rows.country, ...rows.cet, ...rows.sandbox];
+  const scopedRows = applyCommonFilters(allRows);
+  const myScopeCount = scopedRows.length;
+  const inFlightCount = scopedRows.filter((x) => x.status === "In Flight").length;
+  const governanceCount = rows.cet.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
+  const completedCount = scopedRows.filter((x) => x.status === "Completed").length;
 
-  dom.viewRoot.innerHTML = `
+  const selectedTableHtml = `
     <section class="card">
-      <h2>Homepage</h2>
-      <p class="muted">Search works across CAD/CET/Sandbox IDs, names, country, and owner.</p>
-      <p class="muted">Default landing view with hierarchy and direct status panels.</p>
-      ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
-      <div class="panel-grid">
-        ${panel("group", "Group CADs")}
-        ${panel("country", "Country CADs")}
-        ${panel("cet", "CETs")}
-        ${panel("sandbox", "Sandboxes")}
-      </div>
-    </section>
-
-    <section class="card">
-      <h3>Selected View: ${state.homeType.toUpperCase()} (${state.homeStatus})</h3>
+      <h3>Selected View: ${state.homeType.toUpperCase()} (${state.homeStatus}) ${state.quickView !== "none" ? `| ${state.quickView}` : ""}</h3>
       <table class="data-table">
         <thead><tr><th>ID</th><th>Name</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th></tr></thead>
         <tbody>${selectedTable || '<tr><td colspan="6">No rows</td></tr>'}</tbody>
       </table>
-    </section>
+    </section>`;
 
-    <section class="card">
-      <h3>All Route Fixtures</h3>
-      <div class="split-two">
-        <div><h4>Group CADs</h4><ul>${quickGroup || "<li>None</li>"}</ul></div>
-        <div><h4>Country CADs</h4><ul>${quickCountry || "<li>None</li>"}</ul></div>
-      </div>
-      <div class="split-two">
-        <div><h4>CETs</h4><ul>${quickCet || "<li>None</li>"}</ul></div>
-        <div><h4>Sandboxes</h4><ul>${quickSandbox || "<li>None</li>"}</ul></div>
-      </div>
-    </section>
-
+  const hierarchyPanel = `
     <section class="card">
       <h3>Hierarchical Tree Grid (Parent -> Child Rows)</h3>
       <table class="data-table">
         <thead><tr><th></th><th>Type</th><th>Location</th><th>ID</th><th>Name</th><th>Status</th><th>Owner/Counts</th><th>Action</th></tr></thead>
         <tbody>${treeRows || '<tr><td colspan="8">No matching records</td></tr>'}</tbody>
       </table>
-    </section>
-  `;
+    </section>`;
 
-  dom.viewRoot.querySelectorAll(".chip-row").forEach((row) => {
-    row.addEventListener("click", (event) => {
-      const btn = event.target.closest("button[data-status]");
-      if (!btn) return;
-      state.homeType = row.dataset.type;
-      state.homeStatus = btn.dataset.status;
+  if (state.homeViewMode === "home") {
+    dom.viewRoot.innerHTML = `
+      <section class="card">
+        <h2>Homepage</h2>
+        <p class="muted">Search works across CAD/CET/Sandbox IDs, names, country, and owner.</p>
+        ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
+        <div class="metric-grid">
+          <div class="metric"><span>My Scope Docs</span><strong>${myScopeCount}</strong></div>
+          <div class="metric"><span>In Flight</span><strong>${inFlightCount}</strong></div>
+          <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
+          <div class="metric"><span>Completed</span><strong>${completedCount}</strong></div>
+        </div>
+        <div class="quick-actions">
+          <button class="btn secondary small" data-quick-action="mydocs">Show My Docs</button>
+          <button class="btn secondary small" data-quick-action="needsaction">Needs Action</button>
+          <button class="btn secondary small" data-quick-action="alerts">Governance Alerts</button>
+          <button class="btn secondary small" data-quick-action="hierarchy">Open Hierarchy</button>
+        </div>
+      </section>
+      ${selectedTableHtml}
+    `;
+  } else {
+    dom.viewRoot.innerHTML = `
+      <section class="card">
+        <h2>Hierarchy Explorer</h2>
+        <p class="muted">Parent-child grid view by Group CAD, Country CAD, CET, and Sandbox.</p>
+      </section>
+      ${selectedTableHtml}
+      ${hierarchyPanel}
+    `;
+  }
+
+  dom.viewRoot.querySelectorAll("[data-quick-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.quickAction === "mydocs") state.quickView = "mydocs";
+      if (btn.dataset.quickAction === "needsaction") state.quickView = "needsaction";
+      if (btn.dataset.quickAction === "alerts") {
+        state.homeType = "cet";
+        state.quickView = "governancealerts";
+      }
+      if (btn.dataset.quickAction === "hierarchy") state.homeViewMode = "hierarchy";
       render();
     });
   });
@@ -632,6 +716,7 @@ function initEvents() {
     dom.searchInput.value = "";
     state.searchTerm = "";
     state.filters = { myDocs: false, product: "", clientSegment: "", cluster: "", country: "", status: "" };
+    state.quickView = "none";
     dom.myDocsToggle.checked = false;
     dom.productFilter.value = "";
     dom.segmentFilter.value = "";
