@@ -49,6 +49,8 @@ const state = {
   quickView: "needsaction",
   expandedGroups: new Set(),
   expandedCountries: new Set(),
+  activeSectionId: "",
+  sectionObserver: null,
   issueStore: {
     issues: [],
     summary: { blockers: 0, errors: 0, warnings: 0, total: 0 }
@@ -311,88 +313,53 @@ function renderLeftPanel() {
   const child = r.childId ? getChildById(r.childId) : null;
 
   const detailExpanded = `
-    <h2>Context</h2>
-    <div class="context-block">
-      <button class="side-link" data-home-view="home">Homepage</button>
-      <button class="side-link" data-home-view="hierarchy">Hierarchy Explorer</button>
+    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" title="Collapse">⟨</button></div>
+    <div class="menu-group">
+      <button class="menu-item ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
+      <button class="menu-item ${state.homeViewMode === "hierarchy" ? "active" : ""}" data-home-view="hierarchy">Hierarchy Explorer</button>
     </div>
-    <div class="context-block">
-      <h3>Trace</h3>
-      ${group ? `<a class="side-link active" href="${PATH.group(group.id)}">${group.id} - ${group.name}</a>` : ""}
-      ${countryCad ? `<a class="side-link active" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.country}</a>` : ""}
-      ${countryCad ? `<a class="side-link active" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.name}</a>` : ""}
-      ${child ? `<a class="side-link active" href="${PATH.detail(group.id, countryCad.country, countryCad.id, child.id)}">${child.name}</a>` : ""}
+    <div class="menu-group">
+      <p class="menu-title">Trace</p>
+      ${group ? `<a class="menu-item ${r.view === "group" ? "active" : ""}" href="${PATH.group(group.id)}">${group.name}</a>` : ""}
+      ${countryCad ? `<a class="menu-item ${r.view === "country" ? "active" : ""}" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.country}</a>` : ""}
+      ${countryCad ? `<a class="menu-item ${r.view === "country" ? "active" : ""}" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.name}</a>` : ""}
+      ${child ? `<a class="menu-item ${(r.view === "cet" || r.view === "sandbox") ? "active" : ""}" href="${PATH.detail(group.id, countryCad.country, countryCad.id, child.id)}">${child.name}</a>` : ""}
     </div>
-    <div class="context-block">
-      <h3>Sections</h3>
-      ${detailSections.map((s) => `<a class="side-link" href="#${s.id}">${s.label}</a>`).join("")}
-    </div>
-    <div class="context-block">
-      <h3>Status</h3>
-      <div class="side-rows">
-        ${rowStatus(state.homeType, "Active", "Active")}
-        ${rowStatus(state.homeType, "In Flight", "In Flight")}
-        ${rowStatus(state.homeType, "Completed", "Completed")}
-      </div>
-    </div>
-    <div class="context-block">
-      <h3>View Mode</h3>
-      <button id="left-toggle" class="btn secondary small">Minimize</button>
+    <div class="menu-group">
+      <p class="menu-title">Sections</p>
+      ${detailSections.map((s) => `<a class="menu-item section-link ${state.activeSectionId === s.id ? "active" : ""}" data-section-id="${s.id}" href="#${s.id}">${s.label}</a>`).join("")}
     </div>`;
 
   const expanded = `
-    <h2>Context</h2>
-    <div class="context-block">
-      <button class="side-link ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
-      <button class="side-link ${state.homeViewMode === "hierarchy" ? "active" : ""}" data-home-view="hierarchy">Hierarchy Explorer</button>
+    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" title="Collapse">⟨</button></div>
+    <div class="menu-group">
+      <button class="menu-item ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
+      <button class="menu-item ${state.homeViewMode === "hierarchy" ? "active" : ""}" data-home-view="hierarchy">Hierarchy Explorer</button>
     </div>
-    <div class="context-block">
-      <h3>Document Filters</h3>
-      <div class="side-group">
-        <p class="side-head">${entityTitle("group")}</p>
-        ${statusRows("group")}
-      </div>
-      <div class="side-group">
-        <p class="side-head">${entityTitle("country")}</p>
-        ${statusRows("country")}
-      </div>
-      <div class="side-group">
-        <p class="side-head">${entityTitle("cet")}</p>
-        ${statusRows("cet")}
-      </div>
-      <div class="side-group">
-        <p class="side-head">${entityTitle("sandbox")}</p>
-        ${statusRows("sandbox")}
-      </div>
+    <div class="menu-group">
+      <p class="menu-title">Document Filters</p>
+      <div class="side-group"><p class="side-head">${entityTitle("group")}</p>${statusRows("group")}</div>
+      <div class="side-group"><p class="side-head">${entityTitle("country")}</p>${statusRows("country")}</div>
+      <div class="side-group"><p class="side-head">${entityTitle("cet")}</p>${statusRows("cet")}</div>
+      <div class="side-group"><p class="side-head">${entityTitle("sandbox")}</p>${statusRows("sandbox")}</div>
     </div>
-    <div class="context-block">
-      <h3>Quick Views</h3>
-      <button class="side-link ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
-      <button class="side-link ${state.quickView === "inbox" ? "active" : ""}" data-quick-view="inbox">Inbox <span class="mini-badge">${inboxCount}</span></button>
-      <button class="side-link ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
-      <button class="side-link ${state.quickView === "needsaction" ? "active" : ""}" data-quick-view="needsaction">Needs Action <span class="mini-badge">${inboxCount}</span></button>
-      <button class="side-link ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts <span class="mini-badge warn">${alertCount}</span></button>
-    </div>
-    <div class="context-block">
-      <h3>Level</h3>
-      <p class="muted">${r.view === "home" ? "Home" : r.view.toUpperCase()}</p>
-      ${r.groupCadId ? `<p><strong>Group:</strong> ${r.groupCadId}</p>` : ""}
-      ${r.countryCadId ? `<p><strong>Country CAD:</strong> ${r.countryCadId}</p>` : ""}
-      ${r.childId ? `<p><strong>Child:</strong> ${r.childId}</p>` : ""}
-    </div>
-    <div class="context-block">
-      <h3>View Mode</h3>
-      <button id="left-toggle" class="btn secondary small">Minimize</button>
+    <div class="menu-group">
+      <p class="menu-title">Quick Views</p>
+      <button class="menu-item ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
+      <button class="menu-item ${state.quickView === "inbox" ? "active" : ""}" data-quick-view="inbox">Inbox <span class="mini-badge">${inboxCount}</span></button>
+      <button class="menu-item ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
+      <button class="menu-item ${state.quickView === "needsaction" ? "active" : ""}" data-quick-view="needsaction">Needs Action <span class="mini-badge">${inboxCount}</span></button>
+      <button class="menu-item ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts <span class="mini-badge warn">${alertCount}</span></button>
     </div>`;
 
   const collapsed = `
     <div class="icon-rail">
-      <button id="left-toggle" class="icon-pill" title="Expand">=</button>
-      <button class="icon-pill ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" title="Home">🏠</button>
-      <button class="icon-pill ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" title="Group CADs">🗂</button>
-      <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" title="Country CADs">🌍</button>
-      <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" title="CETs">🧪</button>
-      <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" title="Sandboxes">🧱</button>
+      <button id="left-toggle" class="icon-pill" title="Expand">⟩</button>
+      <button class="icon-pill ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" title="Home">⌂</button>
+      <button class="icon-pill ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" title="Group CADs">▦</button>
+      <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" title="Country CADs">◎</button>
+      <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" title="CETs">◉</button>
+      <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" title="Sandboxes">◈</button>
       ${r.view !== "home" ? `<span class="icon-pill active" title="Opened Document">📝</span>` : ""}
     </div>`;
 
@@ -818,6 +785,8 @@ function render() {
   else if (state.route.view === "country") renderCountryDetail();
   else renderCetOrSandbox();
 
+  setupSectionSpy();
+
   const showActions = state.route.view !== "home";
   dom.actionBar.style.display = showActions ? "flex" : "none";
 
@@ -834,6 +803,40 @@ function render() {
       renderIssuePanel();
     });
   });
+}
+
+function setupSectionSpy() {
+  if (state.sectionObserver) {
+    state.sectionObserver.disconnect();
+    state.sectionObserver = null;
+  }
+
+  const ids =
+    state.route.view === "group" || state.route.view === "country"
+      ? CAD_SECTIONS.map((s) => s.id)
+      : state.route.view === "cet"
+        ? CET_SECTIONS.map((s) => s.id)
+        : state.route.view === "sandbox"
+          ? SANDBOX_SECTIONS.map((s) => s.id)
+          : [];
+  if (!ids.length) return;
+
+  const targets = ids.map((id) => document.getElementById(id)).filter(Boolean);
+  if (!targets.length) return;
+  if (!state.activeSectionId) state.activeSectionId = ids[0];
+
+  state.sectionObserver = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((e) => e.isIntersecting)
+      .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (!visible) return;
+    state.activeSectionId = visible.target.id;
+    dom.leftPanel.querySelectorAll(".section-link").forEach((el) => {
+      el.classList.toggle("active", el.dataset.sectionId === state.activeSectionId);
+    });
+  }, { rootMargin: "-30% 0px -55% 0px", threshold: 0.01 });
+
+  targets.forEach((t) => state.sectionObserver.observe(t));
 }
 
 function populateFilters() {}

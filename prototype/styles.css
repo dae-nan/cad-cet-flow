@@ -98,6 +98,49 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
 .left-panel h3 { margin: 0.3rem 0 0.4rem; font-size: 0.86rem; color: var(--muted); text-transform: uppercase; }
 .left-panel a { color: var(--primary); text-decoration: none; display: block; margin-bottom: 0.35rem; }
 .left-panel a.active { font-weight: 700; }
+.side-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+.collapse-btn {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+}
+.menu-group {
+  border-top: 1px solid #eef2f8;
+  padding-top: 0.5rem;
+  margin-top: 0.45rem;
+}
+.menu-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.83rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  border-radius: 8px;
+  padding: 0.35rem 0.4rem;
+  color: #1f4ea6;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-item.active {
+  background: #eaf1ff;
+  color: #0d4cb5;
+}
 .side-link {
   border: 0;
   background: transparent;
