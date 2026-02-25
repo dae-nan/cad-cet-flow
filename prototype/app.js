@@ -435,13 +435,13 @@ function renderLeftPanel() {
 
   const collapsed = `
     <div class="icon-rail">
-      <button id="left-toggle" class="icon-pill" title="Expand">${navIcon("menu")}</button>
-      <button class="icon-pill ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" title="Home">${navIcon("home")}</button>
-      <button class="icon-pill ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" title="Group CADs">${navIcon("group")}</button>
-      <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" title="Country CADs">${navIcon("country")}</button>
-      <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" title="CETs">${navIcon("cet")}</button>
-      <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" title="Sandboxes">${navIcon("sandbox")}</button>
-      ${r.view !== "home" ? `<span class="icon-pill active" title="Opened Document">${navIcon("file")}</span>` : ""}
+      <button id="left-toggle" class="icon-pill has-tooltip" aria-label="Expand menu" data-tooltip="Expand menu">${navIcon("menu")}</button>
+      <button class="icon-pill has-tooltip ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" aria-label="Home" data-tooltip="Home">${navIcon("home")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" aria-label="Group CADs" data-tooltip="Group CADs">${navIcon("group")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" aria-label="Country CADs" data-tooltip="Country CADs">${navIcon("country")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" aria-label="Sandboxes" data-tooltip="Sandboxes">${navIcon("sandbox")}</button>
+      ${r.view !== "home" ? `<span class="icon-pill has-tooltip active" aria-label="Opened document" data-tooltip="Opened document">${navIcon("file")}</span>` : ""}
     </div>`;
 
   const isCollapsed = dom.leftPanel.classList.contains("collapsed");

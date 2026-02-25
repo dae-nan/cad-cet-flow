@@ -224,6 +224,48 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   fill: currentColor;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .left-panel.collapsed .has-tooltip {
+    position: relative;
+  }
+  .left-panel.collapsed .has-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0, 0, 0, 0.86);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    z-index: 32;
+  }
+  .left-panel.collapsed .has-tooltip::before {
+    content: "";
+    position: absolute;
+    left: calc(100% + 5px);
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: rgba(0, 0, 0, 0.86);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    z-index: 32;
+  }
+  .left-panel.collapsed .has-tooltip:hover::after,
+  .left-panel.collapsed .has-tooltip:hover::before,
+  .left-panel.collapsed .has-tooltip:focus-visible::after,
+  .left-panel.collapsed .has-tooltip:focus-visible::before {
+    opacity: 1;
+  }
+}
+
 .center-panel { display: grid; gap: 0.95rem; }
 .card {
   background: var(--surface);
