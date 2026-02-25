@@ -1,13 +1,7 @@
 # CAD CET Flow Prototype
 
 ## Run
-Preferred:
-- `cd /Users/daenan/Code/delegations/prototype`
-- `python3 -m http.server 8080`
-- open `http://localhost:8080`
-
-Fallback behavior:
-- If you open `index.html` directly and JSON fetch fails, the app now loads embedded sample data and shows a warning banner.
+- Open `/Users/daenan/Code/delegations/prototype/index.html` directly, or run a local server.
 
 ## Routing state
 - `#/home` (default)
@@ -16,18 +10,25 @@ Fallback behavior:
 - `#/cad/:groupCadId/:country/:countryCadId/:cetId`
 - `#/cad/:groupCadId/:country/:countryCadId/:sandboxId`
 
-## Implemented updates
-- Homepage default independent route.
-- Left panel now drives entity/status filtering:
+## UX behavior updates
+- Left panel contains document filters as row sub-options (not tags):
   - Group CADs, Country CADs, CETs, Sandboxes
-  - Sub-options: All, Active, In Flight, Completed
-  - Quick Views: My Docs, Needs Action, Governance Alerts
-- Cross-type global search across ID, name, country, owner.
-- Filters for product, client segment, cluster, country, status, and `My Docs` toggle.
-- Hierarchical parent-child grid with country-level CET/SBX counts appears only in `Hierarchy Explorer` mode.
-- Dynamic right issue panel retained (desktop rail/tablet drawer/mobile bottom sheet).
+  - Active / In Flight / Completed
+- Left panel quick views: All Docs, Inbox, My Docs, Needs Action, Governance Alerts.
+- Homepage mode:
+  - High-level user metrics + quick actions
+  - Search bar in main content panel top
+  - Filtered selected-view table
+- Hierarchy Explorer mode:
+  - Default content is only hierarchical tree grid
+  - Search bar elevated in main content top
+  - Product/segment/cluster/country filters attached to hierarchy table area
+  - Sub-text shown: `Selected view: ...`
+- Hierarchy tree interactions:
+  - Expand/collapse group rows
+  - Expand/collapse country rows
+  - Expand all / Collapse all
 
 ## Data
-- Full sample hierarchy: `/Users/daenan/Code/delegations/prototype/data/sample-hierarchy.json`
-- Includes mixed states (`Active`, `In Flight`, `Completed`) across all entity types.
-- Embedded fallback dataset (same content): `/Users/daenan/Code/delegations/prototype/data/sample-hierarchy.js`
+- `/Users/daenan/Code/delegations/prototype/data/sample-hierarchy.json`
+- `/Users/daenan/Code/delegations/prototype/data/sample-hierarchy.js` (embedded fallback for file mode)
