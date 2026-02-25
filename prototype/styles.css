@@ -118,6 +118,10 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   width: 30px;
   height: 30px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #2d3a55;
 }
 .menu-group {
   border-top: 1px solid #eef2f8;
@@ -556,7 +560,19 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
     border-radius: 9px;
   }
   .panel-grid { grid-template-columns: 1fr; }
-  .metric-grid { grid-template-columns: 1fr; }
+  .metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+  .metric {
+    padding: 0.5rem;
+  }
+  .metric strong {
+    font-size: 1.05rem;
+  }
+  .metric span {
+    font-size: 0.75rem;
+  }
   .form-grid,
   .split-two { grid-template-columns: 1fr; }
   .main-search-row input { min-width: 0; width: 100%; }
