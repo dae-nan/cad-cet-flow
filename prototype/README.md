@@ -18,11 +18,13 @@ Fallback behavior:
 
 ## Implemented updates
 - Homepage default independent route.
-- Direct status panels for Group CADs, Country CADs, CETs, Sandboxes.
+- Left panel now drives entity/status filtering:
+  - Group CADs, Country CADs, CETs, Sandboxes
+  - Sub-options: All, Active, In Flight, Completed
+  - Quick Views: My Docs, Needs Action, Governance Alerts
 - Cross-type global search across ID, name, country, owner.
 - Filters for product, client segment, cluster, country, status, and `My Docs` toggle.
-- Hierarchical parent-child grid with country-level CET/SBX counts.
-- Quick deep-link section to test individual Group, Country, CET, Sandbox routes.
+- Hierarchical parent-child grid with country-level CET/SBX counts appears only in `Hierarchy Explorer` mode.
 - Dynamic right issue panel retained (desktop rail/tablet drawer/mobile bottom sheet).
 
 ## Data
