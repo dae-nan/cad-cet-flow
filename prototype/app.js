@@ -390,7 +390,7 @@ function renderLeftPanel() {
   const child = r.childId ? getChildById(r.childId) : null;
 
   const detailExpanded = `
-    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" title="Collapse">⟨</button></div>
+    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     <div class="menu-group">
       <button class="menu-item ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
     </div>
@@ -412,7 +412,7 @@ function renderLeftPanel() {
     </div>`;
 
   const expanded = `
-    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" title="Collapse">⟨</button></div>
+    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     <div class="menu-group">
       <button class="menu-item ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
     </div>
