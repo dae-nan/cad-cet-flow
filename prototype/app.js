@@ -19,12 +19,13 @@ const state = {
     product: "",
     clientSegment: "",
     cluster: "",
-    country: "",
-    status: ""
+    country: ""
   },
   homeType: "group",
-  homeStatus: "all",
+  homeStatus: "Active",
   quickView: "none",
+  expandedGroups: new Set(),
+  expandedCountries: new Set(),
   issueStore: {
     issues: [],
     summary: { blockers: 0, errors: 0, warnings: 0, total: 0 }
@@ -45,14 +46,6 @@ const dom = {
   saveBtn: document.getElementById("save-btn"),
   validateBtn: document.getElementById("validate-btn"),
   submitBtn: document.getElementById("submit-btn"),
-  searchInput: document.getElementById("global-search"),
-  searchReset: document.getElementById("search-reset"),
-  myDocsToggle: document.getElementById("my-docs-toggle"),
-  productFilter: document.getElementById("filter-product"),
-  segmentFilter: document.getElementById("filter-segment"),
-  clusterFilter: document.getElementById("filter-cluster"),
-  countryFilter: document.getElementById("filter-country"),
-  statusFilter: document.getElementById("filter-status"),
   issuePanel: document.getElementById("issue-panel"),
   issueList: document.getElementById("issue-list"),
   issueSummary: document.getElementById("issue-summary"),
@@ -83,7 +76,7 @@ function applyCommonFilters(rows) {
       const p = state.data.userProfile;
       if (row.cluster !== p.cluster && !(p.countries || []).includes(row.country)) return false;
     }
-    if (state.quickView === "needsaction") {
+    if (state.quickView === "needsaction" || state.quickView === "inbox") {
       if (!(row.status === "In Flight" || row.status === "Active")) return false;
     }
     if (state.quickView === "governancealerts") {
@@ -94,7 +87,6 @@ function applyCommonFilters(rows) {
     if (state.filters.clientSegment && row.clientSegment !== state.filters.clientSegment) return false;
     if (state.filters.cluster && row.cluster !== state.filters.cluster) return false;
     if (state.filters.country && row.country !== state.filters.country) return false;
-    if (state.filters.status && row.status !== state.filters.status) return false;
     if (!term) return true;
 
     const haystack = [row.id, row.name, row.country, row.owner, row.product, row.clientSegment]
@@ -149,21 +141,119 @@ function childCounts(countryCadId) {
   };
 }
 
+function optionsFor(key) {
+  const rows = [
+    ...state.data.groupCads,
+    ...state.data.countryCads,
+    ...state.data.cets,
+    ...state.data.sandboxes
+  ];
+  return uniqueValues(rows, key)
+    .map((v) => `<option value="${v}" ${state.filters[key] === v ? "selected" : ""}>${v}</option>`)
+    .join("");
+}
+
+function statusMatch(type, row) {
+  if (state.homeType !== type) return true;
+  return row.status === state.homeStatus;
+}
+
+function ensureExpandedDefaults() {
+  if (state.expandedGroups.size === 0) {
+    state.data.groupCads.forEach((g, idx) => {
+      if (idx < 2) state.expandedGroups.add(g.id);
+    });
+  }
+}
+
+function renderHierarchyTable() {
+  ensureExpandedDefaults();
+  const groupRows = applyCommonFilters(state.data.groupCads).filter((g) => statusMatch("group", g));
+  const out = [];
+
+  for (const group of groupRows) {
+    const countriesAll = applyCommonFilters(
+      state.data.countryCads.filter((c) => c.groupCadId === group.id)
+    ).filter((c) => statusMatch("country", c));
+
+    let countryOutput = "";
+    for (const country of countriesAll) {
+      const counts = childCounts(country.id);
+      const countryKey = `${group.id}::${country.id}`;
+      const countryExpanded = state.expandedCountries.has(countryKey);
+      const cets = applyCommonFilters(state.data.cets.filter((x) => x.countryCadId === country.id)).filter((x) => statusMatch("cet", x));
+      const sbx = applyCommonFilters(state.data.sandboxes.filter((x) => x.countryCadId === country.id)).filter((x) => statusMatch("sandbox", x));
+      const leaves = [
+        ...cets.map((x) => ({ type: "CET", ...x })),
+        ...sbx.map((x) => ({ type: "Sandbox", ...x }))
+      ];
+
+      const leafRows = countryExpanded
+        ? leaves.map((x) => `
+            <tr class="leaf">
+              <td></td>
+              <td></td>
+              <td>${x.type}</td>
+              <td>${x.id}</td>
+              <td class="key-col"><a href="${PATH.detail(group.id, country.country, country.id, x.id)}">${x.name}</a></td>
+              <td>${x.status}</td>
+              <td>${x.owner}</td>
+              <td>${x.type === "CET" ? `${x.exposure || 0}/${x.cap || 0}` : `Limit ${x.limit || 0}`}</td>
+            </tr>`)
+            .join("")
+        : "";
+
+      countryOutput += `
+        <tr class="country-row">
+          <td><button class="tree-toggle" data-toggle-country="${countryKey}">${countryExpanded ? "-" : "+"}</button></td>
+          <td>Country CAD</td>
+          <td>${country.country}</td>
+          <td>${country.id}</td>
+          <td class="key-col"><a href="${PATH.country(group.id, country.country, country.id)}">${country.name}</a></td>
+          <td>${country.status}</td>
+          <td>CETs ${counts.cets} | SBX ${counts.sandboxes}</td>
+          <td></td>
+        </tr>
+        ${leafRows}`;
+    }
+
+    const groupExpanded = state.expandedGroups.has(group.id);
+    out.push(`
+      <tr class="group-row">
+        <td><button class="tree-toggle" data-toggle-group="${group.id}">${groupExpanded ? "-" : "+"}</button></td>
+        <td>Group CAD</td>
+        <td>Global</td>
+        <td>${group.id}</td>
+        <td class="key-col"><a href="${PATH.group(group.id)}">${group.name}</a></td>
+        <td>${group.status}</td>
+        <td>${group.owner}</td>
+        <td></td>
+      </tr>
+      ${groupExpanded ? countryOutput : ""}`);
+  }
+
+  return `
+    <section class="card">
+      <h3>Hierarchical Tree Grid (Parent -> Child Rows)</h3>
+      <table class="data-table hierarchy-table">
+        <thead><tr><th></th><th>Type</th><th>Location</th><th>ID</th><th class="key-col">Name (Key)</th><th>Status</th><th>Owner/Counts</th><th>Info</th></tr></thead>
+        <tbody>${out.join("") || '<tr><td colspan="8">No matching records</td></tr>'}</tbody>
+      </table>
+    </section>`;
+}
+
 function renderLeftPanel() {
   const r = state.route;
-  const entityTitle = (type) => ({
-    group: "Group CADs",
-    country: "Country CADs",
-    cet: "CETs",
-    sandbox: "Sandboxes"
-  }[type] || type);
-
-  const statusButtons = (type) => `
-    <div class="side-statuses">
-      <button class="side-chip ${state.homeType === type && state.homeStatus === "all" ? "on" : ""}" data-home-type="${type}" data-home-status="all">All</button>
-      <button class="side-chip ${state.homeType === type && state.homeStatus === "Active" ? "on" : ""}" data-home-type="${type}" data-home-status="Active">Active</button>
-      <button class="side-chip ${state.homeType === type && state.homeStatus === "In Flight" ? "on" : ""}" data-home-type="${type}" data-home-status="In Flight">In Flight</button>
-      <button class="side-chip ${state.homeType === type && state.homeStatus === "Completed" ? "on" : ""}" data-home-type="${type}" data-home-status="Completed">Completed</button>
+  const entityTitle = (type) => ({ group: "Group CADs", country: "Country CADs", cet: "CETs", sandbox: "Sandboxes" }[type] || type);
+  const rowStatus = (type, status, label) => `
+    <button class="side-row ${state.homeType === type && state.homeStatus === status ? "on" : ""}" data-home-type="${type}" data-home-status="${status}">
+      <span>${label}</span>
+    </button>`;
+  const statusRows = (type) => `
+    <div class="side-rows">
+      ${rowStatus(type, "Active", "Active")}
+      ${rowStatus(type, "In Flight", "In Flight")}
+      ${rowStatus(type, "Completed", "Completed")}
     </div>`;
 
   const expanded = `
@@ -176,24 +266,25 @@ function renderLeftPanel() {
       <h3>Document Filters</h3>
       <div class="side-group">
         <p class="side-head">${entityTitle("group")}</p>
-        ${statusButtons("group")}
+        ${statusRows("group")}
       </div>
       <div class="side-group">
         <p class="side-head">${entityTitle("country")}</p>
-        ${statusButtons("country")}
+        ${statusRows("country")}
       </div>
       <div class="side-group">
         <p class="side-head">${entityTitle("cet")}</p>
-        ${statusButtons("cet")}
+        ${statusRows("cet")}
       </div>
       <div class="side-group">
         <p class="side-head">${entityTitle("sandbox")}</p>
-        ${statusButtons("sandbox")}
+        ${statusRows("sandbox")}
       </div>
     </div>
     <div class="context-block">
       <h3>Quick Views</h3>
       <button class="side-link ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
+      <button class="side-link ${state.quickView === "inbox" ? "active" : ""}" data-quick-view="inbox">Inbox</button>
       <button class="side-link ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
       <button class="side-link ${state.quickView === "needsaction" ? "active" : ""}" data-quick-view="needsaction">Needs Action</button>
       <button class="side-link ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts</button>
@@ -214,10 +305,10 @@ function renderLeftPanel() {
     <div class="icon-rail">
       <button id="left-toggle" class="icon-pill" title="Expand">=</button>
       <button class="icon-pill ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" title="Home">🏠</button>
-      <button class="icon-pill ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="${state.homeStatus}" title="Group CADs">🗂</button>
-      <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="${state.homeStatus}" title="Country CADs">🌍</button>
-      <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="${state.homeStatus}" title="CETs">🧪</button>
-      <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="${state.homeStatus}" title="Sandboxes">🧱</button>
+      <button class="icon-pill ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" title="Group CADs">🗂</button>
+      <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" title="Country CADs">🌍</button>
+      <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" title="CETs">🧪</button>
+      <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" title="Sandboxes">🧱</button>
     </div>`;
 
   const isCollapsed = dom.leftPanel.classList.contains("collapsed");
@@ -266,65 +357,7 @@ function renderHome() {
   };
 
   const selectedRows = rows[state.homeType]
-    .filter((x) => state.homeStatus === "all" || x.status === state.homeStatus);
-
-  const panel = (type, label) => {
-    const r = rows[type];
-    const counts = {
-      active: r.filter((x) => x.status === "Active").length,
-      inflight: r.filter((x) => x.status === "In Flight").length,
-      completed: r.filter((x) => x.status === "Completed").length
-    };
-    return `<section class="card compact">
-      <h3>${label}</h3>
-      <div class="chip-row" data-type="${type}">
-        <button class="chip ${state.homeType === type && state.homeStatus === "all" ? "on" : ""}" data-status="all">All ${r.length}</button>
-        <button class="chip ${state.homeType === type && state.homeStatus === "Active" ? "on" : ""}" data-status="Active">Active ${counts.active}</button>
-        <button class="chip ${state.homeType === type && state.homeStatus === "In Flight" ? "on" : ""}" data-status="In Flight">In Flight ${counts.inflight}</button>
-        <button class="chip ${state.homeType === type && state.homeStatus === "Completed" ? "on" : ""}" data-status="Completed">Completed ${counts.completed}</button>
-      </div>
-    </section>`;
-  };
-
-  const treeRows = applyCommonFilters(state.data.groupCads).map((group) => {
-    const countries = applyCommonFilters(
-      state.data.countryCads.filter((c) => c.groupCadId === group.id)
-    );
-
-    const countryRows = countries.map((country) => {
-      const counts = childCounts(country.id);
-      const cets = applyCommonFilters(state.data.cets.filter((x) => x.countryCadId === country.id));
-      const sbx = applyCommonFilters(state.data.sandboxes.filter((x) => x.countryCadId === country.id));
-
-      const cetRows = cets.map((x) => `<tr class="leaf"><td></td><td></td><td>CET</td><td>${x.id}</td><td>${x.name}</td><td>${x.status}</td><td>${x.owner}</td><td><a href="${PATH.detail(group.id, country.country, country.id, x.id)}">Open</a></td></tr>`).join("");
-      const sbxRows = sbx.map((x) => `<tr class="leaf"><td></td><td></td><td>Sandbox</td><td>${x.id}</td><td>${x.name}</td><td>${x.status}</td><td>${x.owner}</td><td><a href="${PATH.detail(group.id, country.country, country.id, x.id)}">Open</a></td></tr>`).join("");
-
-      return `
-        <tr class="country-row">
-          <td></td>
-          <td>Country CAD</td>
-          <td>${country.country}</td>
-          <td>${country.id}</td>
-          <td>${country.name}</td>
-          <td>${country.status}</td>
-          <td>CETs ${counts.cets} | SBX ${counts.sandboxes}</td>
-          <td><a href="${PATH.country(group.id, country.country, country.id)}">Open</a></td>
-        </tr>
-        ${cetRows}${sbxRows}`;
-    }).join("");
-
-    return `
-      <tr class="group-row">
-        <td>+</td>
-        <td>Group CAD</td>
-        <td>Global</td>
-        <td>${group.id}</td>
-        <td>${group.name}</td>
-        <td>${group.status}</td>
-        <td>${group.owner}</td>
-        <td><a href="${PATH.group(group.id)}">Open</a></td>
-      </tr>${countryRows}`;
-  }).join("");
+    .filter((x) => x.status === state.homeStatus);
 
   const selectedTable = selectedRows.map((r) => `<tr>
     <td>${r.id}</td><td>${r.name}</td><td>${r.country || "Global"}</td><td>${r.product}</td><td>${r.status}</td><td>${r.owner}</td>
@@ -336,22 +369,14 @@ function renderHome() {
   const inFlightCount = scopedRows.filter((x) => x.status === "In Flight").length;
   const governanceCount = rows.cet.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
   const completedCount = scopedRows.filter((x) => x.status === "Completed").length;
+  const statusText = `${state.homeType.toUpperCase()} / ${state.homeStatus}`;
 
   const selectedTableHtml = `
     <section class="card">
-      <h3>Selected View: ${state.homeType.toUpperCase()} (${state.homeStatus}) ${state.quickView !== "none" ? `| ${state.quickView}` : ""}</h3>
+      <h3>Selected View: ${statusText} ${state.quickView !== "none" ? `| ${state.quickView}` : ""}</h3>
       <table class="data-table">
-        <thead><tr><th>ID</th><th>Name</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th></tr></thead>
+        <thead><tr><th>ID</th><th class="key-col">Name (Key)</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th></tr></thead>
         <tbody>${selectedTable || '<tr><td colspan="6">No rows</td></tr>'}</tbody>
-      </table>
-    </section>`;
-
-  const hierarchyPanel = `
-    <section class="card">
-      <h3>Hierarchical Tree Grid (Parent -> Child Rows)</h3>
-      <table class="data-table">
-        <thead><tr><th></th><th>Type</th><th>Location</th><th>ID</th><th>Name</th><th>Status</th><th>Owner/Counts</th><th>Action</th></tr></thead>
-        <tbody>${treeRows || '<tr><td colspan="8">No matching records</td></tr>'}</tbody>
       </table>
     </section>`;
 
@@ -359,7 +384,11 @@ function renderHome() {
     dom.viewRoot.innerHTML = `
       <section class="card">
         <h2>Homepage</h2>
-        <p class="muted">Search works across CAD/CET/Sandbox IDs, names, country, and owner.</p>
+        <div class="main-search-row">
+          <label for="main-search">Search</label>
+          <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
+          <button class="btn secondary small" data-action="reset-search">Reset</button>
+        </div>
         ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
         <div class="metric-grid">
           <div class="metric"><span>My Scope Docs</span><strong>${myScopeCount}</strong></div>
@@ -380,10 +409,23 @@ function renderHome() {
     dom.viewRoot.innerHTML = `
       <section class="card">
         <h2>Hierarchy Explorer</h2>
-        <p class="muted">Parent-child grid view by Group CAD, Country CAD, CET, and Sandbox.</p>
+        <div class="main-search-row">
+          <label for="main-search">Search</label>
+          <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
+          <button class="btn secondary small" data-action="reset-search">Reset</button>
+        </div>
+        <div class="table-filter-row">
+          <select id="table-filter-product"><option value="">Product</option>${optionsFor("product")}</select>
+          <select id="table-filter-segment"><option value="">Client Segment</option>${optionsFor("clientSegment")}</select>
+          <select id="table-filter-cluster"><option value="">Cluster</option>${optionsFor("cluster")}</select>
+          <select id="table-filter-country"><option value="">Country</option>${optionsFor("country")}</select>
+          <button class="btn secondary small" data-action="reset-table-filters">Clear Filters</button>
+          <button class="btn secondary small" data-action="expand-all">Expand All</button>
+          <button class="btn secondary small" data-action="collapse-all">Collapse All</button>
+        </div>
+        <p class="muted">Selected view: ${statusText}${state.quickView !== "none" ? ` | ${state.quickView}` : ""}${state.filters.product ? ` | Product ${state.filters.product}` : ""}${state.filters.clientSegment ? ` | Segment ${state.filters.clientSegment}` : ""}${state.filters.cluster ? ` | Cluster ${state.filters.cluster}` : ""}${state.filters.country ? ` | Country ${state.filters.country}` : ""}</p>
       </section>
-      ${selectedTableHtml}
-      ${hierarchyPanel}
+      ${renderHierarchyTable()}
     `;
   }
 
@@ -681,60 +723,10 @@ function render() {
   });
 }
 
-function populateFilters() {
-  const allRows = [
-    ...state.data.groupCads,
-    ...state.data.countryCads,
-    ...state.data.cets,
-    ...state.data.sandboxes
-  ];
-
-  const fill = (el, values) => {
-    values.forEach((v) => {
-      const o = document.createElement("option");
-      o.value = v;
-      o.textContent = v;
-      el.appendChild(o);
-    });
-  };
-
-  fill(dom.productFilter, uniqueValues(allRows, "product"));
-  fill(dom.segmentFilter, uniqueValues(allRows, "clientSegment"));
-  fill(dom.clusterFilter, uniqueValues(allRows, "cluster"));
-  fill(dom.countryFilter, uniqueValues(allRows, "country"));
-}
+function populateFilters() {}
 
 function initEvents() {
   window.addEventListener("hashchange", render);
-
-  dom.searchInput.addEventListener("input", () => {
-    state.searchTerm = dom.searchInput.value;
-    render();
-  });
-
-  dom.searchReset.addEventListener("click", () => {
-    dom.searchInput.value = "";
-    state.searchTerm = "";
-    state.filters = { myDocs: false, product: "", clientSegment: "", cluster: "", country: "", status: "" };
-    state.quickView = "none";
-    dom.myDocsToggle.checked = false;
-    dom.productFilter.value = "";
-    dom.segmentFilter.value = "";
-    dom.clusterFilter.value = "";
-    dom.countryFilter.value = "";
-    dom.statusFilter.value = "";
-    render();
-  });
-
-  dom.myDocsToggle.addEventListener("change", () => {
-    state.filters.myDocs = dom.myDocsToggle.checked;
-    render();
-  });
-  dom.productFilter.addEventListener("change", () => { state.filters.product = dom.productFilter.value; render(); });
-  dom.segmentFilter.addEventListener("change", () => { state.filters.clientSegment = dom.segmentFilter.value; render(); });
-  dom.clusterFilter.addEventListener("change", () => { state.filters.cluster = dom.clusterFilter.value; render(); });
-  dom.countryFilter.addEventListener("change", () => { state.filters.country = dom.countryFilter.value; render(); });
-  dom.statusFilter.addEventListener("change", () => { state.filters.status = dom.statusFilter.value; render(); });
 
   dom.validateBtn.addEventListener("click", () => {
     recomputeIssues();
@@ -761,6 +753,76 @@ function initEvents() {
     const btn = event.target.closest("button[data-issue-id]");
     if (!btn) return;
     jumpToIssue(btn.dataset.issueId);
+  });
+
+  dom.viewRoot.addEventListener("click", (event) => {
+    const actionBtn = event.target.closest("[data-action]");
+    if (actionBtn) {
+      const action = actionBtn.dataset.action;
+      if (action === "reset-search") {
+        state.searchTerm = "";
+        render();
+      }
+      if (action === "reset-table-filters") {
+        state.filters.product = "";
+        state.filters.clientSegment = "";
+        state.filters.cluster = "";
+        state.filters.country = "";
+        render();
+      }
+      if (action === "expand-all") {
+        state.expandedGroups = new Set(state.data.groupCads.map((g) => g.id));
+        state.expandedCountries = new Set(
+          state.data.countryCads.map((c) => `${c.groupCadId}::${c.id}`)
+        );
+        render();
+      }
+      if (action === "collapse-all") {
+        state.expandedGroups = new Set();
+        state.expandedCountries = new Set();
+        render();
+      }
+      return;
+    }
+
+    const tg = event.target.closest("[data-toggle-group]");
+    if (tg) {
+      const id = tg.dataset.toggleGroup;
+      if (state.expandedGroups.has(id)) state.expandedGroups.delete(id);
+      else state.expandedGroups.add(id);
+      render();
+      return;
+    }
+
+    const tc = event.target.closest("[data-toggle-country]");
+    if (tc) {
+      const id = tc.dataset.toggleCountry;
+      if (state.expandedCountries.has(id)) state.expandedCountries.delete(id);
+      else state.expandedCountries.add(id);
+      render();
+    }
+  });
+
+  dom.viewRoot.addEventListener("input", (event) => {
+    const target = event.target;
+    if (target.id === "main-search") {
+      state.searchTerm = target.value;
+      render();
+      return;
+    }
+
+    if (target.id === "table-filter-product") state.filters.product = target.value;
+    if (target.id === "table-filter-segment") state.filters.clientSegment = target.value;
+    if (target.id === "table-filter-cluster") state.filters.cluster = target.value;
+    if (target.id === "table-filter-country") state.filters.country = target.value;
+    if (
+      target.id === "table-filter-product" ||
+      target.id === "table-filter-segment" ||
+      target.id === "table-filter-cluster" ||
+      target.id === "table-filter-country"
+    ) {
+      render();
+    }
   });
 }
 
