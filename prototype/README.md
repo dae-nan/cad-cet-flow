@@ -28,3 +28,4 @@ Fallback behavior:
 ## Data
 - Full sample hierarchy: `/Users/daenan/Code/delegations/prototype/data/sample-hierarchy.json`
 - Includes mixed states (`Active`, `In Flight`, `Completed`) across all entity types.
+- Embedded fallback dataset (same content): `/Users/daenan/Code/delegations/prototype/data/sample-hierarchy.js`
