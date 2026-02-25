@@ -1,0 +1,21 @@
+{
+  "rules": [
+    {
+      "ruleId": "GOV-AGG-CAP-001",
+      "scope": "aggregate_exposure",
+      "severity": "blocking",
+      "message": "Aggregate CET exposure exceeds allowed portfolio cap."
+    },
+    {
+      "ruleId": "GOV-WARN-ACK-010",
+      "scope": "rationale_ack",
+      "severity": "warning",
+      "message": "High utilization requires rationale and acknowledgement."
+    }
+  ],
+  "aggregateCap": {
+    "product": "PL",
+    "limit": 100,
+    "warningThresholdPct": 80
+  }
+}
