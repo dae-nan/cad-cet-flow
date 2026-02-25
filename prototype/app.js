@@ -192,7 +192,19 @@ function optionsFor(key) {
 
 function statusMatch(type, row) {
   if (state.homeType !== type) return true;
+  if (state.homeStatus === "all") return true;
   return row.status === state.homeStatus;
+}
+
+function statusTag(status) {
+  const cls = status === "Active" ? "tag-active" : status === "In Flight" ? "tag-flight" : "tag-done";
+  return `<span class="status-tag ${cls}">${status}</span>`;
+}
+
+function openHrefForRow(row, type) {
+  if (type === "group") return PATH.group(row.id);
+  if (type === "country") return PATH.country(row.groupCadId, row.country, row.id);
+  return PATH.detail(row.groupCadId, row.country, row.countryCadId, row.id);
 }
 
 function ensureExpandedDefaults() {
@@ -294,6 +306,8 @@ function renderLeftPanel() {
     <button class="side-row ${state.homeType === type && state.homeStatus === status ? "on" : ""}" data-home-type="${type}" data-home-status="${status}">
       <span>${label}</span>
     </button>`;
+  const parentType = (type) => `
+    <button class="menu-item ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all">${entityTitle(type)}</button>`;
   const statusRows = (type) => `
     <div class="side-rows">
       ${rowStatus(type, "Active", "Active")}
@@ -316,14 +330,15 @@ function renderLeftPanel() {
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" title="Collapse">⟨</button></div>
     <div class="menu-group">
       <button class="menu-item ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
-      <button class="menu-item ${state.homeViewMode === "hierarchy" ? "active" : ""}" data-home-view="hierarchy">Hierarchy Explorer</button>
     </div>
     <div class="menu-group">
       <p class="menu-title">Trace</p>
-      ${group ? `<a class="menu-item ${r.view === "group" ? "active" : ""}" href="${PATH.group(group.id)}">${group.name}</a>` : ""}
-      ${countryCad ? `<a class="menu-item ${r.view === "country" ? "active" : ""}" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.country}</a>` : ""}
-      ${countryCad ? `<a class="menu-item ${r.view === "country" ? "active" : ""}" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.name}</a>` : ""}
-      ${child ? `<a class="menu-item ${(r.view === "cet" || r.view === "sandbox") ? "active" : ""}" href="${PATH.detail(group.id, countryCad.country, countryCad.id, child.id)}">${child.name}</a>` : ""}
+      <div class="tree-dir">
+        ${group ? `<a class="menu-item tree-node level-0 ${r.view === "group" ? "active" : ""}" href="${PATH.group(group.id)}">▾ ${group.name}</a>` : ""}
+        ${countryCad ? `<a class="menu-item tree-node level-1 ${r.view === "country" ? "active" : ""}" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">▾ ${countryCad.country}</a>` : ""}
+        ${countryCad ? `<a class="menu-item tree-node level-2 ${r.view === "country" ? "active" : ""}" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.name}</a>` : ""}
+        ${child ? `<a class="menu-item tree-node level-3 ${(r.view === "cet" || r.view === "sandbox") ? "active" : ""}" href="${PATH.detail(group.id, countryCad.country, countryCad.id, child.id)}">${child.name}</a>` : ""}
+      </div>
     </div>
     <div class="menu-group">
       <p class="menu-title">Sections</p>
@@ -334,17 +349,17 @@ function renderLeftPanel() {
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" title="Collapse">⟨</button></div>
     <div class="menu-group">
       <button class="menu-item ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
-      <button class="menu-item ${state.homeViewMode === "hierarchy" ? "active" : ""}" data-home-view="hierarchy">Hierarchy Explorer</button>
     </div>
     <div class="menu-group">
       <p class="menu-title">Document Filters</p>
-      <div class="side-group"><p class="side-head">${entityTitle("group")}</p>${statusRows("group")}</div>
-      <div class="side-group"><p class="side-head">${entityTitle("country")}</p>${statusRows("country")}</div>
-      <div class="side-group"><p class="side-head">${entityTitle("cet")}</p>${statusRows("cet")}</div>
-      <div class="side-group"><p class="side-head">${entityTitle("sandbox")}</p>${statusRows("sandbox")}</div>
+      <div class="side-group">${parentType("group")}${statusRows("group")}</div>
+      <div class="side-group">${parentType("country")}${statusRows("country")}</div>
+      <div class="side-group">${parentType("cet")}${statusRows("cet")}</div>
+      <div class="side-group">${parentType("sandbox")}${statusRows("sandbox")}</div>
     </div>
     <div class="menu-group">
       <p class="menu-title">Quick Views</p>
+      <button class="menu-item ${state.homeViewMode === "hierarchy" ? "active" : ""}" data-home-view="hierarchy">Hierarchy Explorer</button>
       <button class="menu-item ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
       <button class="menu-item ${state.quickView === "inbox" ? "active" : ""}" data-quick-view="inbox">Inbox <span class="mini-badge">${inboxCount}</span></button>
       <button class="menu-item ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
@@ -411,10 +426,10 @@ function renderHome() {
   };
 
   const selectedRows = rows[state.homeType]
-    .filter((x) => x.status === state.homeStatus);
+    .filter((x) => state.homeStatus === "all" || x.status === state.homeStatus);
 
   const selectedTable = selectedRows.map((r) => `<tr>
-    <td>${r.id}</td><td>${r.name}</td><td>${r.country || "Global"}</td><td>${r.product}</td><td>${r.status}</td><td>${r.owner}</td>
+    <td>${r.id}</td><td class="key-col">${r.name}</td><td>${r.country || "Global"}</td><td>${r.product}</td><td>${statusTag(r.status)}</td><td>${r.owner}</td><td><a href="${openHrefForRow(r, state.homeType)}">Open</a></td>
   </tr>`).join("");
 
   const allRows = [...rows.group, ...rows.country, ...rows.cet, ...rows.sandbox];
@@ -429,8 +444,8 @@ function renderHome() {
     <section class="card">
       <h3>Selected View: ${statusText} ${state.quickView !== "none" ? `| ${state.quickView}` : ""}</h3>
       <table class="data-table">
-        <thead><tr><th>ID</th><th class="key-col">Name (Key)</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th></tr></thead>
-        <tbody>${selectedTable || '<tr><td colspan="6">No rows</td></tr>'}</tbody>
+        <thead><tr><th>ID</th><th class="key-col">Name (Key)</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
+        <tbody>${selectedTable || '<tr><td colspan="7">No rows</td></tr>'}</tbody>
       </table>
     </section>`;
 
@@ -560,16 +575,15 @@ function renderCountryDetail() {
     </section>
     <section class="card" id="cad-basic">
       <h3>Child Tests (parallel tracks)</h3>
-      <div class="split-two">
-        <div>
-          <h4>CETs</h4>
-          <ul>${cets.map((x) => `<li><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">${x.id}</a> - ${x.status}</li>`).join("") || "<li>None</li>"}</ul>
-        </div>
-        <div>
-          <h4>Sandboxes</h4>
-          <ul>${sandboxes.map((x) => `<li><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">${x.id}</a> - ${x.status}</li>`).join("") || "<li>None</li>"}</ul>
-        </div>
-      </div>
+      <table class="data-table">
+        <thead><tr><th>Type</th><th>ID</th><th class="key-col">Name (Key)</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
+        <tbody>
+          ${[
+            ...cets.map((x) => `<tr><td>CET</td><td>${x.id}</td><td class="key-col">${x.name}</td><td>${statusTag(x.status)}</td><td>${x.owner}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`),
+            ...sandboxes.map((x) => `<tr><td>Sandbox</td><td>${x.id}</td><td class="key-col">${x.name}</td><td>${statusTag(x.status)}</td><td>${x.owner}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`)
+          ].join("") || '<tr><td colspan="6">No child tests</td></tr>'}
+        </tbody>
+      </table>
     </section>
     <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Country summary for policy and limits.</p></section>
     <section class="card" id="cad-strategy"><h3>Strategy</h3><p class="muted">Country strategy for execution.</p></section>
