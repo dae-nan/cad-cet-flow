@@ -1,4 +1,10 @@
-import SAMPLE_DATA from "./data/sample-hierarchy.js";
+const SAMPLE_DATA = window.SAMPLE_HIERARCHY_DATA || {
+  userProfile: { name: "User", cluster: "", countries: [] },
+  groupCads: [],
+  countryCads: [],
+  cets: [],
+  sandboxes: []
+};
 
 const FALLBACK_DATA = SAMPLE_DATA;
 
@@ -675,13 +681,18 @@ function initEvents() {
 
 async function init() {
   state.data = SAMPLE_DATA;
-  try {
-    const res = await fetch("data/sample-hierarchy.json");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    state.data = await res.json();
-  } catch (_err) {
+  if (window.location.protocol === "file:") {
     state.data = FALLBACK_DATA;
-    state.loadWarning = "Using embedded fallback sample data because external JSON could not be loaded. Run via local server for full dataset.";
+    state.loadWarning = "Running from local file mode with embedded sample data.";
+  } else {
+    try {
+      const res = await fetch("data/sample-hierarchy.json");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      state.data = await res.json();
+    } catch (_err) {
+      state.data = FALLBACK_DATA;
+      state.loadWarning = "Using embedded fallback sample data because external JSON could not be loaded.";
+    }
   }
   populateFilters();
   if (!window.location.hash) window.location.hash = PATH.home;
