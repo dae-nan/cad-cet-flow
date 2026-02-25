@@ -1,0 +1,14 @@
+{
+  "cadRecords": [
+    {
+      "cadId": "CAD-7621",
+      "level": "country",
+      "country": "India",
+      "clientSegment": "SME Program Lending",
+      "products": ["PL", "CC"],
+      "owner": "S. Kumar",
+      "status": "Draft"
+    }
+  ],
+  "activeCaseId": "CAD-7621"
+}

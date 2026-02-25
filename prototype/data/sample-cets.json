@@ -1,0 +1,18 @@
+{
+  "cets": [
+    {
+      "cetId": "CET-101",
+      "cadId": "CAD-7621",
+      "product": "PL",
+      "stage": "active",
+      "exposure": 60
+    },
+    {
+      "cetId": "CET-104",
+      "cadId": "CAD-7621",
+      "product": "PL",
+      "stage": "active",
+      "exposure": 55
+    }
+  ]
+}
