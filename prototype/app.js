@@ -96,7 +96,7 @@ function uniqueValues(rows, key) {
   return [...new Set(rows.map((r) => r[key]).filter(Boolean))].sort();
 }
 
-function applyCommonFilters(rows) {
+function applyCommonFilters(rows, opts = {}) {
   const term = state.searchTerm.trim().toLowerCase();
   return rows.filter((row) => {
     const myDocsActive = state.filters.myDocs || state.quickView === "mydocs";
@@ -115,7 +115,7 @@ function applyCommonFilters(rows) {
     if (state.filters.clientSegment && row.clientSegment !== state.filters.clientSegment) return false;
     if (state.filters.cluster && row.cluster !== state.filters.cluster) return false;
     if (state.filters.country && row.country !== state.filters.country) return false;
-    if (!term) return true;
+    if (opts.ignoreSearch || !term) return true;
 
     const haystack = [row.id, row.name, row.country, row.owner, row.product, row.clientSegment]
       .filter(Boolean)
@@ -123,6 +123,65 @@ function applyCommonFilters(rows) {
       .toLowerCase();
     return haystack.includes(term);
   });
+}
+
+function navIcon(name) {
+  const icons = {
+    menu: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M160 288h704v64H160zm0 192h704v64H160zm0 192h704v64H160z"/></svg>',
+    home: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M512 170L106 506h86v348h256V640h128v214h256V506h86z"/></svg>',
+    group: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M128 160h320v320H128zm448 0h320v320H576zM128 544h320v320H128zm448 0h320v320H576z"/></svg>',
+    country: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M512 96a416 416 0 100 832 416 416 0 000-832zm-43 78c-42 50-72 128-82 222H220c33-101 124-181 249-222zm-96 300c8 98 37 185 79 244H250c-31-65-48-139-50-218 0-9 0-17 1-26zm139 346c-31-34-56-81-72-138h144c-16 57-41 104-72 138zm87-198H425c-10-60-15-124-15-190 0-65 5-129 15-188h174c10 59 15 123 15 188 0 66-5 130-15 190zm27 198c31-34 56-81 72-138h144c-16 57-41 104-72 138zm93-198c42-59 71-146 79-244h172c1 9 1 17 1 26-2 79-19 153-50 218zm79-304c-10-94-40-172-82-222 125 41 216 121 249 222z"/></svg>',
+    cet: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M320 128h384v96H320zm80 128h224v112l168 288a112 112 0 01-97 168H329a112 112 0 01-97-168l168-288z"/></svg>',
+    sandbox: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M128 288l384-160 384 160-384 160zm64 96l320 133 320-133v208L512 752 192 592zm0 272l320 133 320-133v80L512 869 192 736z"/></svg>',
+    file: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M256 96h384l192 192v640H256zM576 160v192h192"/></svg>'
+  };
+  return `<span class="ant-icon">${icons[name] || icons.file}</span>`;
+}
+
+function getHomepageSearchSuggestions() {
+  const q = state.searchTerm.trim().toLowerCase();
+  if (!q || state.route.view !== "home" || state.homeViewMode !== "home") return [];
+  const buckets = [
+    { type: "group", label: "Group CADs", rows: applyCommonFilters(state.data.groupCads, { ignoreSearch: true }) },
+    { type: "country", label: "Country CADs", rows: applyCommonFilters(state.data.countryCads, { ignoreSearch: true }) },
+    { type: "cet", label: "CETs", rows: applyCommonFilters(state.data.cets, { ignoreSearch: true }) },
+    { type: "sandbox", label: "Sandboxes", rows: applyCommonFilters(state.data.sandboxes, { ignoreSearch: true }) }
+  ];
+
+  return buckets
+    .map((bucket) => {
+      const rows = bucket.rows
+        .filter((row) => {
+          const haystack = [row.id, row.name, row.owner, row.country, row.product, row.clientSegment]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(q);
+        })
+        .slice(0, 4)
+        .map((row) => ({ ...row, type: bucket.type }));
+      return { ...bucket, rows };
+    })
+    .filter((bucket) => bucket.rows.length > 0);
+}
+
+function renderSearchAutocomplete() {
+  const groups = getHomepageSearchSuggestions();
+  if (!groups.length) return "";
+  return `
+    <div class="autocomplete-panel" id="search-autocomplete" role="listbox" aria-label="Search Suggestions">
+      ${groups.map((group) => `
+        <div class="ac-group">
+          <p class="ac-title">${group.label}</p>
+          ${group.rows.map((row) => `
+            <button class="ac-option" data-ac-value="${row.id}">
+              <span><strong>${row.id}</strong> ${row.name}</span>
+              <span class="muted">${row.country || "Global"}</span>
+            </button>
+          `).join("")}
+        </div>
+      `).join("")}
+    </div>`;
 }
 
 function parseRoute() {
@@ -248,7 +307,7 @@ function renderHierarchyTable() {
               <td>${x.type}</td>
               <td>${x.id}</td>
               <td class="key-col"><a href="${PATH.detail(group.id, country.country, country.id, x.id)}">${x.name}</a></td>
-              <td>${x.status}</td>
+              <td>${statusTag(x.status)}</td>
               <td>${x.owner}</td>
               <td>${x.type === "CET" ? `${x.exposure || 0}/${x.cap || 0}` : `Limit ${x.limit || 0}`}</td>
             </tr>`)
@@ -262,7 +321,7 @@ function renderHierarchyTable() {
           <td>${country.country}</td>
           <td>${country.id}</td>
           <td class="key-col"><a href="${PATH.country(group.id, country.country, country.id)}">${country.name}</a></td>
-          <td>${country.status}</td>
+          <td>${statusTag(country.status)}</td>
           <td>CETs ${counts.cets} | SBX ${counts.sandboxes}</td>
           <td></td>
         </tr>
@@ -277,7 +336,7 @@ function renderHierarchyTable() {
         <td>Global</td>
         <td>${group.id}</td>
         <td class="key-col"><a href="${PATH.group(group.id)}">${group.name}</a></td>
-        <td>${group.status}</td>
+        <td>${statusTag(group.status)}</td>
         <td>${group.owner}</td>
         <td></td>
       </tr>
@@ -376,13 +435,13 @@ function renderLeftPanel() {
 
   const collapsed = `
     <div class="icon-rail">
-      <button id="left-toggle" class="icon-pill" title="Expand">⟩</button>
-      <button class="icon-pill ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" title="Home">⌂</button>
-      <button class="icon-pill ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" title="Group CADs">▦</button>
-      <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" title="Country CADs">◎</button>
-      <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" title="CETs">◉</button>
-      <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" title="Sandboxes">◈</button>
-      ${r.view !== "home" ? `<span class="icon-pill active" title="Opened Document">📝</span>` : ""}
+      <button id="left-toggle" class="icon-pill" title="Expand">${navIcon("menu")}</button>
+      <button class="icon-pill ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" title="Home">${navIcon("home")}</button>
+      <button class="icon-pill ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" title="Group CADs">${navIcon("group")}</button>
+      <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" title="Country CADs">${navIcon("country")}</button>
+      <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" title="CETs">${navIcon("cet")}</button>
+      <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" title="Sandboxes">${navIcon("sandbox")}</button>
+      ${r.view !== "home" ? `<span class="icon-pill active" title="Opened Document">${navIcon("file")}</span>` : ""}
     </div>`;
 
   const isCollapsed = dom.leftPanel.classList.contains("collapsed");
@@ -470,7 +529,10 @@ function renderHome() {
         <h2>Homepage</h2>
         <div class="main-search-row">
           <label for="main-search">Search</label>
-          <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
+          <div class="autocomplete-wrap">
+            <input id="main-search" value="${state.searchTerm}" autocomplete="off" placeholder="ID / Name / Owner / Country" />
+            ${renderSearchAutocomplete()}
+          </div>
           <button class="btn secondary small" data-action="reset-search">Reset</button>
         </div>
         ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
@@ -539,14 +601,14 @@ function renderGroupDetail() {
 
   const rows = countries.map((c) => {
     const counts = childCounts(c.id);
-    return `<tr><td>${c.country}</td><td>${c.id}</td><td>${c.status}</td><td>${counts.cets}</td><td>${counts.sandboxes}</td><td><a href="${PATH.country(group.id, c.country, c.id)}">Open</a></td></tr>`;
+    return `<tr><td>${c.country}</td><td>${c.id}</td><td>${statusTag(c.status)}</td><td>${counts.cets}</td><td>${counts.sandboxes}</td><td><a href="${PATH.country(group.id, c.country, c.id)}">Open</a></td></tr>`;
   }).join("");
 
   dom.viewRoot.innerHTML = `
     <section class="card" id="cad-overview">
       <h2>Group CAD Detail</h2>
       <p><strong>${group.id}</strong> - ${group.name}</p>
-      <p class="muted">Product ${group.product} | Segment ${group.clientSegment} | Status ${group.status}</p>
+      <p class="muted">Product ${group.product} | Segment ${group.clientSegment} | Status ${statusTag(group.status)}</p>
     </section>
     <section class="card" id="cad-basic">
       <h3>Country CADs</h3>
@@ -913,6 +975,13 @@ function initEvents() {
   });
 
   dom.viewRoot.addEventListener("click", (event) => {
+    const acOption = event.target.closest("[data-ac-value]");
+    if (acOption) {
+      state.searchTerm = acOption.dataset.acValue || "";
+      render();
+      return;
+    }
+
     const actionBtn = event.target.closest("[data-action]");
     if (actionBtn) {
       const action = actionBtn.dataset.action;
