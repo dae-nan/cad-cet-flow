@@ -15,6 +15,10 @@
   - Group CADs, Country CADs, CETs, Sandboxes
   - Active / In Flight / Completed
 - Left panel quick views: All Docs, Inbox, My Docs, Needs Action, Governance Alerts.
+- Homepage default quick view is `Needs Action`.
+- Drilldown pages hide document filters and show breadcrumb-synced trace + section submenus.
+- Breadcrumb is clickable per level (home -> group -> country -> child).
+- Collapsed panel shows an opened-document indicator icon.
 - Homepage mode:
   - High-level user metrics + quick actions
   - Search bar in main content panel top

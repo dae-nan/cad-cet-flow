@@ -7,6 +7,29 @@ const SAMPLE_DATA = window.SAMPLE_HIERARCHY_DATA || {
 };
 
 const FALLBACK_DATA = SAMPLE_DATA;
+const CAD_SECTIONS = [
+  { id: "cad-overview", label: "Overview" },
+  { id: "cad-basic", label: "Basic Details" },
+  { id: "cad-summary", label: "Summary" },
+  { id: "cad-strategy", label: "Strategy" },
+  { id: "cad-portfolio", label: "Portfolio Details" },
+  { id: "cad-kac", label: "Key Acceptance Criteria" },
+  { id: "cad-appendix", label: "Appendix" },
+  { id: "cad-attachments", label: "Attachments" }
+];
+const CET_SECTIONS = [
+  { id: "cet-overview", label: "Overview" },
+  { id: "cet-parameters", label: "Parameters" },
+  { id: "cet-triggers", label: "Triggers & Caps" },
+  { id: "cet-risk", label: "Risk / Exceptions" },
+  { id: "cet-approvals", label: "Approvals" }
+];
+const SANDBOX_SECTIONS = [
+  { id: "sbx-overview", label: "Overview" },
+  { id: "sbx-scope", label: "Scope" },
+  { id: "sbx-guardrails", label: "Guardrails" },
+  { id: "sbx-evidence", label: "Evidence" }
+];
 
 const state = {
   data: null,
@@ -23,7 +46,7 @@ const state = {
   },
   homeType: "group",
   homeStatus: "Active",
-  quickView: "none",
+  quickView: "needsaction",
   expandedGroups: new Set(),
   expandedCountries: new Set(),
   issueStore: {
@@ -141,6 +164,18 @@ function childCounts(countryCadId) {
   };
 }
 
+function getGroupById(id) {
+  return state.data.groupCads.find((x) => x.id === id);
+}
+
+function getCountryCadById(id) {
+  return state.data.countryCads.find((x) => x.id === id);
+}
+
+function getChildById(id) {
+  return state.data.cets.find((x) => x.id === id) || state.data.sandboxes.find((x) => x.id === id);
+}
+
 function optionsFor(key) {
   const rows = [
     ...state.data.groupCads,
@@ -244,6 +279,14 @@ function renderHierarchyTable() {
 
 function renderLeftPanel() {
   const r = state.route;
+  const allDocs = [
+    ...state.data.groupCads,
+    ...state.data.countryCads,
+    ...state.data.cets,
+    ...state.data.sandboxes
+  ];
+  const inboxCount = allDocs.filter((x) => x.status === "Active" || x.status === "In Flight").length;
+  const alertCount = state.data.cets.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
   const entityTitle = (type) => ({ group: "Group CADs", country: "Country CADs", cet: "CETs", sandbox: "Sandboxes" }[type] || type);
   const rowStatus = (type, status, label) => `
     <button class="side-row ${state.homeType === type && state.homeStatus === status ? "on" : ""}" data-home-type="${type}" data-home-status="${status}">
@@ -254,6 +297,47 @@ function renderLeftPanel() {
       ${rowStatus(type, "Active", "Active")}
       ${rowStatus(type, "In Flight", "In Flight")}
       ${rowStatus(type, "Completed", "Completed")}
+    </div>`;
+
+  const detailSections = (() => {
+    if (r.view === "group" || r.view === "country") return CAD_SECTIONS;
+    if (r.view === "cet") return CET_SECTIONS;
+    if (r.view === "sandbox") return SANDBOX_SECTIONS;
+    return [];
+  })();
+
+  const group = r.groupCadId ? getGroupById(r.groupCadId) : null;
+  const countryCad = r.countryCadId ? getCountryCadById(r.countryCadId) : null;
+  const child = r.childId ? getChildById(r.childId) : null;
+
+  const detailExpanded = `
+    <h2>Context</h2>
+    <div class="context-block">
+      <button class="side-link" data-home-view="home">Homepage</button>
+      <button class="side-link" data-home-view="hierarchy">Hierarchy Explorer</button>
+    </div>
+    <div class="context-block">
+      <h3>Trace</h3>
+      ${group ? `<a class="side-link active" href="${PATH.group(group.id)}">${group.id} - ${group.name}</a>` : ""}
+      ${countryCad ? `<a class="side-link active" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.country}</a>` : ""}
+      ${countryCad ? `<a class="side-link active" href="${PATH.country(group.id, countryCad.country, countryCad.id)}">${countryCad.name}</a>` : ""}
+      ${child ? `<a class="side-link active" href="${PATH.detail(group.id, countryCad.country, countryCad.id, child.id)}">${child.name}</a>` : ""}
+    </div>
+    <div class="context-block">
+      <h3>Sections</h3>
+      ${detailSections.map((s) => `<a class="side-link" href="#${s.id}">${s.label}</a>`).join("")}
+    </div>
+    <div class="context-block">
+      <h3>Status</h3>
+      <div class="side-rows">
+        ${rowStatus(state.homeType, "Active", "Active")}
+        ${rowStatus(state.homeType, "In Flight", "In Flight")}
+        ${rowStatus(state.homeType, "Completed", "Completed")}
+      </div>
+    </div>
+    <div class="context-block">
+      <h3>View Mode</h3>
+      <button id="left-toggle" class="btn secondary small">Minimize</button>
     </div>`;
 
   const expanded = `
@@ -284,10 +368,10 @@ function renderLeftPanel() {
     <div class="context-block">
       <h3>Quick Views</h3>
       <button class="side-link ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
-      <button class="side-link ${state.quickView === "inbox" ? "active" : ""}" data-quick-view="inbox">Inbox</button>
+      <button class="side-link ${state.quickView === "inbox" ? "active" : ""}" data-quick-view="inbox">Inbox <span class="mini-badge">${inboxCount}</span></button>
       <button class="side-link ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
-      <button class="side-link ${state.quickView === "needsaction" ? "active" : ""}" data-quick-view="needsaction">Needs Action</button>
-      <button class="side-link ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts</button>
+      <button class="side-link ${state.quickView === "needsaction" ? "active" : ""}" data-quick-view="needsaction">Needs Action <span class="mini-badge">${inboxCount}</span></button>
+      <button class="side-link ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts <span class="mini-badge warn">${alertCount}</span></button>
     </div>
     <div class="context-block">
       <h3>Level</h3>
@@ -309,10 +393,13 @@ function renderLeftPanel() {
       <button class="icon-pill ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" title="Country CADs">🌍</button>
       <button class="icon-pill ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" title="CETs">🧪</button>
       <button class="icon-pill ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" title="Sandboxes">🧱</button>
+      ${r.view !== "home" ? `<span class="icon-pill active" title="Opened Document">📝</span>` : ""}
     </div>`;
 
   const isCollapsed = dom.leftPanel.classList.contains("collapsed");
-  dom.leftPanel.innerHTML = isCollapsed ? collapsed : expanded;
+  dom.leftPanel.innerHTML = isCollapsed
+    ? collapsed
+    : (r.view === "home" ? expanded : detailExpanded);
 
   const btn = document.getElementById("left-toggle");
   if (btn) {
@@ -459,18 +546,24 @@ function renderGroupDetail() {
   }).join("");
 
   dom.viewRoot.innerHTML = `
-    <section class="card">
+    <section class="card" id="cad-overview">
       <h2>Group CAD Detail</h2>
       <p><strong>${group.id}</strong> - ${group.name}</p>
       <p class="muted">Product ${group.product} | Segment ${group.clientSegment} | Status ${group.status}</p>
     </section>
-    <section class="card">
+    <section class="card" id="cad-basic">
       <h3>Country CADs</h3>
       <table class="data-table">
         <thead><tr><th>Country</th><th>Country CAD</th><th>Status</th><th>CETs</th><th>Sandboxes</th><th>Action</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="6">No country CADs</td></tr>'}</tbody>
       </table>
-    </section>`;
+    </section>
+    <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Programme summary and country rollout status.</p></section>
+    <section class="card" id="cad-strategy"><h3>Strategy</h3><p class="muted">Portfolio strategy and constraints.</p></section>
+    <section class="card" id="cad-portfolio"><h3>Portfolio Details</h3><p class="muted">Portfolio level limits and segmentation.</p></section>
+    <section class="card" id="cad-kac"><h3>Key Acceptance Criteria</h3><p class="muted">KAC checklist.</p></section>
+    <section class="card" id="cad-appendix"><h3>Appendix</h3><p class="muted">Supporting notes.</p></section>
+    <section class="card" id="cad-attachments"><h3>Attachments</h3><p class="muted">Reference documents.</p></section>`;
 }
 
 function renderCountryDetail() {
@@ -484,7 +577,7 @@ function renderCountryDetail() {
   const successful = state.data.cets.filter((c) => c.countryCadId === countryCad.id && c.result === "Successful");
 
   dom.viewRoot.innerHTML = `
-    <section class="card" id="section-country">
+    <section class="card" id="cad-overview">
       <h2>Country CAD Detail</h2>
       <p><strong>${countryCad.id}</strong> - ${countryCad.name}</p>
       <div class="form-grid">
@@ -498,7 +591,7 @@ function renderCountryDetail() {
       <p class="muted">Successful CETs can be referenced as audit trail for interim changes.</p>
       <ul>${successful.map((s) => `<li>${s.id} - ${s.name}</li>`).join("") || "<li>No successful CET yet</li>"}</ul>
     </section>
-    <section class="card">
+    <section class="card" id="cad-basic">
       <h3>Child Tests (parallel tracks)</h3>
       <div class="split-two">
         <div>
@@ -510,7 +603,13 @@ function renderCountryDetail() {
           <ul>${sandboxes.map((x) => `<li><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">${x.id}</a> - ${x.status}</li>`).join("") || "<li>None</li>"}</ul>
         </div>
       </div>
-    </section>`;
+    </section>
+    <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Country summary for policy and limits.</p></section>
+    <section class="card" id="cad-strategy"><h3>Strategy</h3><p class="muted">Country strategy for execution.</p></section>
+    <section class="card" id="cad-portfolio"><h3>Portfolio Details</h3><p class="muted">Portfolio controls and metrics.</p></section>
+    <section class="card" id="cad-kac"><h3>Key Acceptance Criteria</h3><p class="muted">Acceptance gates.</p></section>
+    <section class="card" id="cad-appendix"><h3>Appendix</h3><p class="muted">Appendix narratives.</p></section>
+    <section class="card" id="cad-attachments"><h3>Attachments</h3><p class="muted">Upload and references.</p></section>`;
 }
 
 function renderCetOrSandbox() {
@@ -526,7 +625,7 @@ function renderCetOrSandbox() {
 
   if (isSandbox) {
     dom.viewRoot.innerHTML = `
-      <section class="card" id="section-sandbox">
+      <section class="card" id="sbx-overview">
         <h2>Sandbox Detail</h2>
         <p><strong>${row.id}</strong> - ${row.name}</p>
         <div class="form-grid">
@@ -537,10 +636,13 @@ function renderCetOrSandbox() {
             <input id="field-sbx-limit" type="number" value="${row.limit}" data-required="true" data-label="Execution Limit" />
           </label>
         </div>
-      </section>`;
+      </section>
+      <section class="card" id="sbx-scope"><h3>Scope</h3><p class="muted">Sandbox scope and constraints.</p></section>
+      <section class="card" id="sbx-guardrails"><h3>Guardrails</h3><p class="muted">Risk and control guardrails.</p></section>
+      <section class="card" id="sbx-evidence"><h3>Evidence</h3><p class="muted">Evidence and outcomes.</p></section>`;
   } else {
     dom.viewRoot.innerHTML = `
-      <section class="card" id="section-cet">
+      <section class="card" id="cet-overview">
         <h2>CET Detail</h2>
         <p><strong>${row.id}</strong> - ${row.name}</p>
         <div class="form-grid">
@@ -558,25 +660,32 @@ function renderCetOrSandbox() {
             Governance warning acknowledged
           </label>
         </div>
-      </section>`;
+      </section>
+      <section class="card" id="cet-parameters"><h3>Parameters</h3><p class="muted">Test parameters and assumptions.</p></section>
+      <section class="card" id="cet-triggers"><h3>Triggers & Caps</h3><p class="muted">Trigger and cap settings.</p></section>
+      <section class="card" id="cet-risk"><h3>Risk / Exceptions</h3><p class="muted">Risks and deviations.</p></section>
+      <section class="card" id="cet-approvals"><h3>Approvals</h3><p class="muted">Approver and sign-off details.</p></section>`;
   }
 }
 
 function setBreadcrumb() {
   const r = state.route;
   if (r.view === "home") {
-    dom.breadcrumb.textContent = "Home";
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a>`;
     return;
   }
+  const group = r.groupCadId ? getGroupById(r.groupCadId) : null;
+  const countryCad = r.countryCadId ? getCountryCadById(r.countryCadId) : null;
+  const child = r.childId ? getChildById(r.childId) : null;
   if (r.view === "group") {
-    dom.breadcrumb.textContent = `Home / ${r.groupCadId}`;
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a>`;
     return;
   }
   if (r.view === "country") {
-    dom.breadcrumb.textContent = `Home / ${r.groupCadId} / ${r.country} / ${r.countryCadId}`;
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a> <span>/</span> <a href="${PATH.country(r.groupCadId, r.country, r.countryCadId)}">${countryCad ? countryCad.country : r.country}</a> <span>/</span> <span>${countryCad ? countryCad.name : r.countryCadId}</span>`;
     return;
   }
-  dom.breadcrumb.textContent = `Home / ${r.groupCadId} / ${r.country} / ${r.countryCadId} / ${r.childId}`;
+  dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a> <span>/</span> <a href="${PATH.country(r.groupCadId, r.country, r.countryCadId)}">${countryCad ? countryCad.name : r.countryCadId}</a> <span>/</span> <span>${child ? child.name : r.childId}</span>`;
 }
 
 function recomputeIssues() {
@@ -608,7 +717,7 @@ function recomputeIssues() {
       issues.push({
         id: "GOV-AGG-CAP-001",
         type: "Blocker",
-        sectionId: "section-cet",
+        sectionId: "cet-overview",
         message: "CET exposure exceeds cap.",
         hint: `Current ${exposure}, allowed ${cap}, reduce by ${exposure - cap}.`
       });
@@ -616,7 +725,7 @@ function recomputeIssues() {
       issues.push({
         id: "GOV-WARN-ACK-010",
         type: "Warning",
-        sectionId: "section-cet",
+        sectionId: "cet-overview",
         fieldId: "field-cet-ack",
         message: "High utilization needs acknowledgement.",
         hint: "Tick governance warning acknowledgement."
@@ -697,6 +806,10 @@ function jumpToIssue(id) {
 
 function render() {
   state.route = parseRoute();
+  if (state.route.view === "group") state.homeType = "group";
+  if (state.route.view === "country") state.homeType = "country";
+  if (state.route.view === "cet") state.homeType = "cet";
+  if (state.route.view === "sandbox") state.homeType = "sandbox";
   setBreadcrumb();
   renderLeftPanel();
 

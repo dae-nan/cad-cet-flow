@@ -33,6 +33,8 @@ body {
 }
 .topbar h1 { margin: 0; font-size: 1.2rem; }
 .breadcrumb { margin: 0.25rem 0 0; font-size: 0.9rem; color: var(--muted); }
+.breadcrumb a { color: var(--primary); text-decoration: none; }
+.breadcrumb span { margin: 0 0.3rem; color: var(--muted); }
 
 .actions { display: flex; gap: 0.45rem; }
 .btn {
@@ -109,6 +111,21 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   width: 100%;
 }
 .side-link.active { color: #093f9f; text-decoration: underline; }
+.mini-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #e8efff;
+  color: #0e4eaf;
+  font-size: 0.72rem;
+  text-align: center;
+  margin-left: 6px;
+}
+.mini-badge.warn {
+  background: #fff1d8;
+  color: #8d5200;
+}
 .side-group { margin-bottom: 0.55rem; }
 .side-head { margin: 0 0 0.25rem; font-weight: 700; font-size: 0.86rem; color: #3f4f69; }
 .side-rows {
@@ -142,9 +159,9 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 0.95rem;
+  padding: 0.72rem 0.82rem;
 }
-.card h2, .card h3 { margin-top: 0; }
+.card h2, .card h3, .card h4 { margin-top: 0; margin-bottom: 0.45rem; }
 .card.compact { padding: 0.7rem; }
 
 .panel-grid {
@@ -215,7 +232,7 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.5rem;
 }
 .form-grid label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.9rem; }
 .split-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
