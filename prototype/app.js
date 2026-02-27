@@ -35,7 +35,6 @@ const state = {
   data: null,
   loadWarning: "",
   route: { view: "home" },
-  homeViewMode: "home",
   searchTerm: "",
   filters: {
     myDocs: false,
@@ -46,7 +45,9 @@ const state = {
   },
   homeType: "group",
   homeStatus: "Active",
-  quickView: "needsaction",
+  quickView: "none",
+  inboxScope: "my",
+  inboxStatus: "all",
   expandedGroups: new Set(),
   expandedCountries: new Set(),
   activeSectionId: "",
@@ -80,11 +81,18 @@ const dom = {
   closePanel: document.getElementById("close-panel"),
   resolvedBanner: document.getElementById("resolved-banner"),
   backdrop: document.getElementById("drawer-backdrop"),
-  filterButtons: [...document.querySelectorAll(".filter")]
+  filterButtons: [...document.querySelectorAll(".filter")],
+  appShell: document.getElementById("app-shell"),
+  floatMenu: document.getElementById("create-float-menu"),
+  createFab: document.getElementById("create-fab"),
+  helpFab: document.getElementById("help-fab"),
+  backTopFab: document.getElementById("backtop-fab")
 };
 
 const PATH = {
   home: "#/home",
+  inbox: "#/inbox",
+  portfolio: "#/portfolio",
   group: (groupCadId) => `#/cad/${groupCadId}`,
   country: (groupCadId, country, countryCadId) =>
     `#/cad/${groupCadId}/${encodeURIComponent(country.toLowerCase())}/${countryCadId}`,
@@ -104,9 +112,6 @@ function applyCommonFilters(rows, opts = {}) {
       const p = state.data.userProfile;
       if (row.cluster !== p.cluster && !(p.countries || []).includes(row.country)) return false;
     }
-    if (state.quickView === "needsaction" || state.quickView === "inbox") {
-      if (!(row.status === "In Flight" || row.status === "Active")) return false;
-    }
     if (state.quickView === "governancealerts") {
       const util = Number(row.exposure) / Math.max(1, Number(row.cap || 0));
       if (!Number.isFinite(util) || util < 0.8) return false;
@@ -125,6 +130,55 @@ function applyCommonFilters(rows, opts = {}) {
   });
 }
 
+function isMyScopeRow(row) {
+  const p = state.data.userProfile;
+  if (!p) return false;
+  return row.cluster === p.cluster || (p.countries || []).includes(row.country);
+}
+
+function isAssignedToMeRow(row) {
+  return isMyScopeRow(row) || row.status === "In Flight";
+}
+
+function teamScopeProducts() {
+  const countries = new Set(state.data.userProfile?.countries || []);
+  const products = new Set();
+  [
+    ...state.data.groupCads,
+    ...state.data.countryCads,
+    ...state.data.cets,
+    ...state.data.sandboxes
+  ].forEach((row) => {
+    if (!countries.size || countries.has(row.country)) products.add(row.product);
+  });
+  return [...products];
+}
+
+function isAssignedToTeamRow(row) {
+  const countries = new Set(state.data.userProfile?.countries || []);
+  const products = teamScopeProducts();
+  const countryMatch = countries.size === 0 || countries.has(row.country);
+  const productMatch = products.length === 0 || products.includes(row.product);
+  return countryMatch && productMatch;
+}
+
+function inboxStatusFor(row) {
+  if (row.status === "Active") return "Draft";
+  return row.status;
+}
+
+function inboxRows() {
+  const allDocs = [
+    ...state.data.groupCads.map((x) => ({ type: "GROUP", ...x })),
+    ...state.data.countryCads.map((x) => ({ type: "COUNTRY", ...x })),
+    ...state.data.cets.map((x) => ({ type: "CET", ...x })),
+    ...state.data.sandboxes.map((x) => ({ type: "SANDBOX", ...x }))
+  ];
+  return allDocs
+    .filter((row) => (state.inboxScope === "my" ? isAssignedToMeRow(row) : isAssignedToTeamRow(row)))
+    .filter((row) => state.inboxStatus === "all" || inboxStatusFor(row) === state.inboxStatus);
+}
+
 function navIcon(name) {
   const icons = {
     menu: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M160 288h704v64H160zm0 192h704v64H160zm0 192h704v64H160z"/></svg>',
@@ -140,7 +194,7 @@ function navIcon(name) {
 
 function getHomepageSearchSuggestions() {
   const q = state.searchTerm.trim().toLowerCase();
-  if (!q || state.route.view !== "home" || state.homeViewMode !== "home") return [];
+  if (!q || state.route.view !== "home") return [];
   const buckets = [
     { type: "group", label: "Group CADs", rows: applyCommonFilters(state.data.groupCads, { ignoreSearch: true }) },
     { type: "country", label: "Country CADs", rows: applyCommonFilters(state.data.countryCads, { ignoreSearch: true }) },
@@ -190,6 +244,8 @@ function parseRoute() {
   const parts = clean.split("/");
 
   if (parts[0] === "home") return { view: "home" };
+  if (parts[0] === "inbox") return { view: "inbox" };
+  if (parts[0] === "portfolio") return { view: "portfolio" };
   if (parts[0] === "cad" && parts.length === 2) {
     return { view: "group", groupCadId: parts[1] };
   }
@@ -259,8 +315,45 @@ function statusMatch(type, row) {
 }
 
 function statusTag(status) {
-  const cls = status === "Active" ? "tag-active" : status === "In Flight" ? "tag-flight" : "tag-done";
-  return `<span class="status-tag ${cls}">${status}</span>`;
+  const cls = status === "Active" || status === "Draft" ? "tag-active" : status === "In Flight" ? "tag-flight" : "tag-done";
+  return `<span class="status-tag ${cls}"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${status.toUpperCase()}</span></span>`;
+}
+
+function ownerInitials(owner) {
+  return String(owner || "NA")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((x) => x[0].toUpperCase())
+    .join("");
+}
+
+function ownerCell(owner) {
+  return `<span class="owner-cell"><span class="owner-avatar">${ownerInitials(owner)}</span><span class="owner-name">${owner || "Unassigned"}</span></span>`;
+}
+
+function countryMeta(country) {
+  const map = {
+    India: { iso3: "IND", flag: "🇮🇳" },
+    Bangladesh: { iso3: "BGD", flag: "🇧🇩" },
+    Pakistan: { iso3: "PAK", flag: "🇵🇰" },
+    UAE: { iso3: "ARE", flag: "🇦🇪" },
+    "Hong Kong": { iso3: "HKG", flag: "🇭🇰" },
+    Kenya: { iso3: "KEN", flag: "🇰🇪" },
+    Singapore: { iso3: "SGP", flag: "🇸🇬" },
+    "Sri Lanka": { iso3: "LKA", flag: "🇱🇰" }
+  };
+  if (!country || country === "Global") return { iso3: "ALL", flag: "🌐" };
+  return map[country] || { iso3: country.slice(0, 3).toUpperCase(), flag: "🏳️" };
+}
+
+function countryCell(country) {
+  const m = countryMeta(country);
+  return `<span class="country-cell" title="${country || "Global"}"><span class="country-flag">${m.flag}</span><span class="country-code">${m.iso3}</span></span>`;
+}
+
+function idTag(id) {
+  return `<span class="id-tag">${id}</span>`;
 }
 
 function openHrefForRow(row, type) {
@@ -304,12 +397,14 @@ function renderHierarchyTable() {
             <tr class="leaf">
               <td></td>
               <td></td>
-              <td>${x.type}</td>
-              <td>${x.id}</td>
-              <td class="key-col"><a href="${PATH.detail(group.id, country.country, country.id, x.id)}">${x.name}</a></td>
+              <td>${x.type}</td>              
+              <td class="key-col hierarchy-name depth-4"><a href="${PATH.detail(group.id, country.country, country.id, x.id)}">${x.name}</a><div>${idTag(x.id)}</div></td>
               <td>${statusTag(x.status)}</td>
-              <td>${x.owner}</td>
-              <td>${x.type === "CET" ? `${x.exposure || 0}/${x.cap || 0}` : `Limit ${x.limit || 0}`}</td>
+              <td>${countryCell(x.country)}</td>
+              <td>${ownerCell(x.owner)}</td>
+              <td>${x.exposure || Math.round((x.limit || 10) * 0.65)}</td>
+              <td>${x.cap || x.limit || 10}</td>
+              <td>${Math.round(((x.exposure || Math.round((x.limit || 10) * 0.65)) / Math.max(1, (x.cap || x.limit || 10))) * 100)}%</td>
             </tr>`)
             .join("")
         : "";
@@ -317,13 +412,14 @@ function renderHierarchyTable() {
       countryOutput += `
         <tr class="country-row">
           <td><button class="tree-toggle" data-toggle-country="${countryKey}">${countryExpanded ? "-" : "+"}</button></td>
-          <td>Country CAD</td>
-          <td>${country.country}</td>
-          <td>${country.id}</td>
-          <td class="key-col"><a href="${PATH.country(group.id, country.country, country.id)}">${country.name}</a></td>
+          <td>COUNTRY</td>
+          <td class="key-col hierarchy-name depth-3"><a href="${PATH.country(group.id, country.country, country.id)}">${country.name}</a><div>${idTag(country.id)}</div></td>
           <td>${statusTag(country.status)}</td>
-          <td>CETs ${counts.cets} | SBX ${counts.sandboxes}</td>
-          <td></td>
+          <td>${countryCell(country.country)}</td>
+          <td>${ownerCell(country.owner)}</td>
+          <td>${country.exposure || Math.round(((country.cetExposure || 0) + (country.sandboxExposure || 0) || 42))}</td>
+          <td>${country.cap || country.limit || 100}</td>
+          <td>${Math.round(((country.exposure || 42) / Math.max(1, (country.cap || country.limit || 100))) * 100)}%</td>
         </tr>
         ${leafRows}`;
     }
@@ -332,23 +428,24 @@ function renderHierarchyTable() {
     out.push(`
       <tr class="group-row">
         <td><button class="tree-toggle" data-toggle-group="${group.id}">${groupExpanded ? "-" : "+"}</button></td>
-        <td>Group CAD</td>
-        <td>Global</td>
-        <td>${group.id}</td>
-        <td class="key-col"><a href="${PATH.group(group.id)}">${group.name}</a></td>
+        <td>GROUP</td>
+        <td class="key-col hierarchy-name depth-1"><a href="${PATH.group(group.id)}">${group.name}</a><div>${idTag(group.id)}</div></td>
         <td>${statusTag(group.status)}</td>
-        <td>${group.owner}</td>
-        <td></td>
+        <td>${countryCell("Global")}</td>
+        <td>${ownerCell(group.owner)}</td>
+        <td>${group.exposure || 180}</td>
+        <td>${group.cap || 250}</td>
+        <td>${Math.round(((group.exposure || 180) / Math.max(1, (group.cap || 250))) * 100)}%</td>
       </tr>
       ${groupExpanded ? countryOutput : ""}`);
   }
 
   return `
     <section class="card">
-      <h3>Hierarchical Tree Grid (Parent -> Child Rows)</h3>
+      <h3>Portfolio Exposure Tree</h3>
       <table class="data-table hierarchy-table">
-        <thead><tr><th></th><th>Type</th><th>Location</th><th>ID</th><th class="key-col">Name (Key)</th><th>Status</th><th>Owner/Counts</th><th>Info</th></tr></thead>
-        <tbody>${out.join("") || '<tr><td colspan="8">No matching records</td></tr>'}</tbody>
+        <thead><tr><th></th><th>Type</th><th class="key-col">Name</th><th>Status</th><th>Country</th><th>Owner</th><th>Exposure</th><th>Limit</th><th>Utilization</th></tr></thead>
+        <tbody>${out.join("") || '<tr><td colspan="9">No matching records</td></tr>'}</tbody>
       </table>
     </section>`;
 }
@@ -362,20 +459,21 @@ function renderLeftPanel() {
     ...state.data.cets,
     ...state.data.sandboxes
   ];
-  const inboxCount = allDocs.filter((x) => x.status === "Active" || x.status === "In Flight").length;
+  const assignedToMeCount = allDocs.filter((x) => isAssignedToMeRow(x)).length;
+  const assignedToTeamCount = allDocs.filter((x) => isAssignedToTeamRow(x)).length;
   const alertCount = state.data.cets.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
   const entityTitle = (type) => ({ group: "Group CADs", country: "Country CADs", cet: "CETs", sandbox: "Sandboxes" }[type] || type);
   const rowStatus = (type, status, label) => `
-    <button class="side-row ${state.homeType === type && state.homeStatus === status ? "on" : ""}" data-home-type="${type}" data-home-status="${status}">
+    <button class="side-row ${type === "inbox" ? (state.inboxStatus === status ? "on" : "") : (state.homeType === type && state.homeStatus === status ? "on" : "")}" data-home-type="${type}" data-home-status="${status}">
       <span>${label}</span>
     </button>`;
   const parentType = (type) => `
     <button class="menu-item ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all">${entityTitle(type)}</button>`;
   const statusRows = (type) => `
     <div class="side-rows ${state.homeType === type ? "open" : "closed"}">
-      ${rowStatus(type, "Active", "Active")}
-      ${rowStatus(type, "In Flight", "In Flight")}
-      ${rowStatus(type, "Completed", "Completed")}
+      ${rowStatus(type, "Active", "ACTIVE")}
+      ${rowStatus(type, "In Flight", "IN FLIGHT")}
+      ${rowStatus(type, "Completed", "COMPLETED")}
     </div>`;
 
   const detailSections = (() => {
@@ -392,7 +490,7 @@ function renderLeftPanel() {
   const detailExpanded = `
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     <div class="menu-group">
-      <button class="menu-item ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
+      <a class="menu-item" href="${PATH.home}">Homepage</a>
     </div>
     <div class="menu-group">
       <p class="menu-title">Trace</p>
@@ -411,11 +509,17 @@ function renderLeftPanel() {
       ${(!isMobile || state.mobileSectionsOpen) ? detailSections.map((s) => `<a class="menu-item section-link ${state.activeSectionId === s.id ? "active" : ""}" data-section-id="${s.id}" href="#${s.id}">${s.label}</a>`).join("") : ""}
     </div>`;
 
-  const expanded = `
-    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
+  const pagesGroup = `
     <div class="menu-group">
-      <button class="menu-item ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home">Homepage</button>
-    </div>
+      <p class="menu-title">Pages</p>
+      <a class="menu-item ${r.view === "home" ? "active" : ""}" href="${PATH.home}">Homepage</a>
+      <a class="menu-item ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}">Inbox</a>
+      <a class="menu-item ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}">Portfolio Monitoring</a>
+    </div>`;
+
+  const homeExpanded = `
+    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
+    ${pagesGroup}
     <div class="menu-group">
       <p class="menu-title">Document Filters</p>
       <div class="side-group">${parentType("group")}${statusRows("group")}</div>
@@ -424,30 +528,60 @@ function renderLeftPanel() {
       <div class="side-group">${parentType("sandbox")}${statusRows("sandbox")}</div>
     </div>
     <div class="menu-group">
-      <p class="menu-title">Quick Views</p>
-      <button class="menu-item ${state.homeViewMode === "hierarchy" ? "active" : ""}" data-home-view="hierarchy">Hierarchy Explorer</button>
+      <p class="menu-title">Action Filters</p>
       <button class="menu-item ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
-      <button class="menu-item ${state.quickView === "inbox" ? "active" : ""}" data-quick-view="inbox">Inbox <span class="mini-badge">${inboxCount}</span></button>
       <button class="menu-item ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
-      <button class="menu-item ${state.quickView === "needsaction" ? "active" : ""}" data-quick-view="needsaction">Needs Action <span class="mini-badge">${inboxCount}</span></button>
       <button class="menu-item ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts <span class="mini-badge warn">${alertCount}</span></button>
     </div>`;
 
-  const collapsed = `
+  const inboxExpanded = `
+    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
+    ${pagesGroup}
+    <div class="menu-group">
+      <p class="menu-title">Inbox Filters</p>
+      <button class="menu-item ${state.inboxScope === "my" ? "active" : ""}" data-inbox-scope="my">My Inbox <span class="mini-badge">${assignedToMeCount}</span></button>
+      <div class="side-rows ${state.inboxScope === "my" ? "open" : "closed"}">
+        ${rowStatus("inbox", "Draft", "DRAFT")}
+        ${rowStatus("inbox", "In Flight", "IN FLIGHT")}
+        ${rowStatus("inbox", "Completed", "COMPLETED")}
+      </div>
+      <button class="menu-item ${state.inboxScope === "team" ? "active" : ""}" data-inbox-scope="team">Team Inbox <span class="mini-badge">${assignedToTeamCount}</span></button>
+      <div class="side-rows ${state.inboxScope === "team" ? "open" : "closed"}">
+        ${rowStatus("inbox", "Draft", "DRAFT")}
+        ${rowStatus("inbox", "In Flight", "IN FLIGHT")}
+        ${rowStatus("inbox", "Completed", "COMPLETED")}
+      </div>
+      <button class="side-row ${state.inboxStatus === "all" ? "on" : ""}" data-inbox-status="all"><span>ALL</span></button>
+      <p class="muted todo-hint">Team inbox is filtered by signed-in profile countries and products.</p>
+    </div>`;
+
+  const portfolioExpanded = `
+    <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
+    ${pagesGroup}`;
+
+  const collapsedHome = `
     <div class="icon-rail">
       <button id="left-toggle" class="icon-pill has-tooltip" aria-label="Expand menu" data-tooltip="Expand menu">${navIcon("menu")}</button>
-      <button class="icon-pill has-tooltip ${state.homeViewMode === "home" ? "active" : ""}" data-home-view="home" aria-label="Home" data-tooltip="Home">${navIcon("home")}</button>
+      <a class="icon-pill has-tooltip ${r.view === "home" ? "active" : ""}" href="${PATH.home}" aria-label="Home" data-tooltip="Home">${navIcon("home")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("file")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("country")}</a>
       <button class="icon-pill has-tooltip ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" aria-label="Group CADs" data-tooltip="Group CADs">${navIcon("group")}</button>
       <button class="icon-pill has-tooltip ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" aria-label="Country CADs" data-tooltip="Country CADs">${navIcon("country")}</button>
-      <button class="icon-pill has-tooltip ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>
-      <button class="icon-pill has-tooltip ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" aria-label="Sandboxes" data-tooltip="Sandboxes">${navIcon("sandbox")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>      
       ${r.view !== "home" ? `<span class="icon-pill has-tooltip active" aria-label="Opened document" data-tooltip="Opened document">${navIcon("file")}</span>` : ""}
+    </div>`;
+  const collapsedMinimal = `
+    <div class="icon-rail">
+      <button id="left-toggle" class="icon-pill has-tooltip" aria-label="Expand menu" data-tooltip="Expand menu">${navIcon("menu")}</button>
+      <a class="icon-pill has-tooltip ${r.view === "home" ? "active" : ""}" href="${PATH.home}" aria-label="Home" data-tooltip="Home">${navIcon("home")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("file")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("country")}</a>
     </div>`;
 
   const isCollapsed = dom.leftPanel.classList.contains("collapsed");
   dom.leftPanel.innerHTML = isCollapsed
-    ? collapsed
-    : (r.view === "home" ? expanded : detailExpanded);
+    ? (r.view === "home" ? collapsedHome : collapsedMinimal)
+    : (r.view === "home" ? homeExpanded : r.view === "inbox" ? inboxExpanded : r.view === "portfolio" ? portfolioExpanded : detailExpanded);
 
   const btn = document.getElementById("left-toggle");
   if (btn) {
@@ -457,16 +591,9 @@ function renderLeftPanel() {
     });
   }
 
-  dom.leftPanel.querySelectorAll("[data-home-view]").forEach((el) => {
-    el.addEventListener("click", () => {
-      state.homeViewMode = el.dataset.homeView;
-      if (state.route.view !== "home") window.location.hash = PATH.home;
-      else render();
-    });
-  });
-
   dom.leftPanel.querySelectorAll("[data-home-type]").forEach((el) => {
     el.addEventListener("click", () => {
+      if (el.dataset.homeType === "inbox") return;
       state.homeType = el.dataset.homeType;
       state.homeStatus = el.dataset.homeStatus || state.homeStatus;
       if (state.route.view !== "home") window.location.hash = PATH.home;
@@ -478,6 +605,31 @@ function renderLeftPanel() {
     el.addEventListener("click", () => {
       state.quickView = el.dataset.quickView;
       if (state.route.view !== "home") window.location.hash = PATH.home;
+      else render();
+    });
+  });
+
+  dom.leftPanel.querySelectorAll("[data-inbox-scope]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.inboxScope = el.dataset.inboxScope;
+      state.inboxStatus = "all";
+      if (state.route.view !== "inbox") window.location.hash = PATH.inbox;
+      else render();
+    });
+  });
+
+  dom.leftPanel.querySelectorAll("[data-inbox-status]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.inboxStatus = el.dataset.inboxStatus;
+      if (state.route.view !== "inbox") window.location.hash = PATH.inbox;
+      else render();
+    });
+  });
+
+  dom.leftPanel.querySelectorAll(".side-row[data-home-type='inbox']").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.inboxStatus = el.dataset.homeStatus;
+      if (state.route.view !== "inbox") window.location.hash = PATH.inbox;
       else render();
     });
   });
@@ -503,7 +655,7 @@ function renderHome() {
     .filter((x) => state.homeStatus === "all" || x.status === state.homeStatus);
 
   const selectedTable = selectedRows.map((r) => `<tr>
-    <td>${r.id}</td><td class="key-col">${r.name}</td><td>${r.country || "Global"}</td><td>${r.product}</td><td>${statusTag(r.status)}</td><td>${r.owner}</td><td><a href="${openHrefForRow(r, state.homeType)}">Open</a></td>
+    <td class="key-col">${r.name}<div>${idTag(r.id)}</div></td><td>${state.homeType.toUpperCase()}</td><td>${countryCell(r.country)}</td><td>${r.product}</td><td>${statusTag(r.status)}</td><td>${ownerCell(r.owner)}</td><td><a href="${openHrefForRow(r, state.homeType)}">Open</a></td>
   </tr>`).join("");
 
   const allRows = [...rows.group, ...rows.country, ...rows.cet, ...rows.sandbox];
@@ -512,81 +664,102 @@ function renderHome() {
   const inFlightCount = scopedRows.filter((x) => x.status === "In Flight").length;
   const governanceCount = rows.cet.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
   const completedCount = scopedRows.filter((x) => x.status === "Completed").length;
-  const statusText = `${state.homeType.toUpperCase()} / ${state.homeStatus}`;
+  const statusText = `${state.homeType.toUpperCase()} / ${state.homeStatus.toUpperCase()}`;
 
   const selectedTableHtml = `
     <section class="card">
       <h3>Selected View: ${statusText} ${state.quickView !== "none" ? `| ${state.quickView}` : ""}</h3>
       <table class="data-table">
-        <thead><tr><th>ID</th><th class="key-col">Name (Key)</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
+        <thead><tr><th class="key-col">Name</th><th>Type</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
         <tbody>${selectedTable || '<tr><td colspan="7">No rows</td></tr>'}</tbody>
       </table>
     </section>`;
 
-  if (state.homeViewMode === "home") {
-    dom.viewRoot.innerHTML = `
-      <section class="card">
-        <h2>Homepage</h2>
-        <div class="main-search-row">
-          <label for="main-search">Search</label>
-          <div class="autocomplete-wrap">
-            <input id="main-search" value="${state.searchTerm}" autocomplete="off" placeholder="ID / Name / Owner / Country" />
-            ${renderSearchAutocomplete()}
-          </div>
-          <button class="btn secondary small" data-action="reset-search">Reset</button>
+  dom.viewRoot.innerHTML = `
+    <section class="card">
+      <h2>Homepage</h2>
+      <div class="main-search-row">
+        <label for="main-search">Search</label>
+        <div class="autocomplete-wrap">
+          <input id="main-search" value="${state.searchTerm}" autocomplete="off" placeholder="ID / Name / Owner / Country" />
+          ${renderSearchAutocomplete()}
         </div>
-        ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
-        <div class="metric-grid">
-          <div class="metric"><span>My Scope Docs</span><strong>${myScopeCount}</strong></div>
-          <div class="metric"><span>In Flight</span><strong>${inFlightCount}</strong></div>
-          <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
-          <div class="metric"><span>Completed</span><strong>${completedCount}</strong></div>
-        </div>
-        <div class="quick-actions">
-          <button class="btn secondary small" data-quick-action="mydocs">Show My Docs</button>
-          <button class="btn secondary small" data-quick-action="needsaction">Needs Action</button>
-          <button class="btn secondary small" data-quick-action="alerts">Governance Alerts</button>
-          <button class="btn secondary small" data-quick-action="hierarchy">Open Hierarchy</button>
-        </div>
-      </section>
-      ${selectedTableHtml}
-    `;
-  } else {
-    dom.viewRoot.innerHTML = `
-      <section class="card">
-        <h2>Hierarchy Explorer</h2>
-        <div class="main-search-row">
-          <label for="main-search">Search</label>
-          <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
-          <button class="btn secondary small" data-action="reset-search">Reset</button>
-        </div>
-        <div class="table-filter-row">
-          <select id="table-filter-product"><option value="">Product</option>${optionsFor("product")}</select>
-          <select id="table-filter-segment"><option value="">Client Segment</option>${optionsFor("clientSegment")}</select>
-          <select id="table-filter-cluster"><option value="">Cluster</option>${optionsFor("cluster")}</select>
-          <select id="table-filter-country"><option value="">Country</option>${optionsFor("country")}</select>
-          <button class="btn secondary small" data-action="reset-table-filters">Clear Filters</button>
-          <button class="btn secondary small" data-action="expand-all">Expand All</button>
-          <button class="btn secondary small" data-action="collapse-all">Collapse All</button>
-        </div>
-        <p class="muted">Selected view: ${statusText}${state.quickView !== "none" ? ` | ${state.quickView}` : ""}${state.filters.product ? ` | Product ${state.filters.product}` : ""}${state.filters.clientSegment ? ` | Segment ${state.filters.clientSegment}` : ""}${state.filters.cluster ? ` | Cluster ${state.filters.cluster}` : ""}${state.filters.country ? ` | Country ${state.filters.country}` : ""}</p>
-      </section>
-      ${renderHierarchyTable()}
-    `;
-  }
+        <button class="btn secondary small" data-action="reset-search">Reset</button>
+      </div>
+      ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
+      <div class="metric-grid">
+        <div class="metric"><span>My Scope Docs</span><strong>${myScopeCount}</strong></div>
+        <div class="metric"><span>In Flight</span><strong>${inFlightCount}</strong></div>
+        <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
+        <div class="metric"><span>Completed</span><strong>${completedCount}</strong></div>
+      </div>
+    </section>
+    ${selectedTableHtml}
+  `;
+}
 
-  dom.viewRoot.querySelectorAll("[data-quick-action]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.dataset.quickAction === "mydocs") state.quickView = "mydocs";
-      if (btn.dataset.quickAction === "needsaction") state.quickView = "needsaction";
-      if (btn.dataset.quickAction === "alerts") {
-        state.homeType = "cet";
-        state.quickView = "governancealerts";
-      }
-      if (btn.dataset.quickAction === "hierarchy") state.homeViewMode = "hierarchy";
-      render();
-    });
+function renderInbox() {
+  const term = state.searchTerm.trim().toLowerCase();
+  const rows = inboxRows().filter((row) => {
+    if (!term) return true;
+    const haystack = [row.id, row.name, row.owner, row.country, row.product, row.clientSegment].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(term);
   });
+  const counts = {
+    draft: rows.filter((x) => inboxStatusFor(x) === "Draft").length,
+    inflight: rows.filter((x) => inboxStatusFor(x) === "In Flight").length,
+    completed: rows.filter((x) => inboxStatusFor(x) === "Completed").length
+  };
+  const tableRows = rows.map((r) => `<tr>
+    <td class="key-col">${r.name}<div>${idTag(r.id)}</div></td><td>${r.type}</td><td>${countryCell(r.country)}</td><td>${r.product}</td><td>${statusTag(inboxStatusFor(r))}</td><td>${ownerCell(r.owner)}</td><td><a href="${openHrefForRow(r, r.type.toLowerCase())}">Open</a></td>
+  </tr>`).join("");
+
+  dom.viewRoot.innerHTML = `
+    <section class="card">
+      <h2>Inbox</h2>
+      <div class="main-search-row">
+        <label for="main-search">Search</label>
+        <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
+        <button class="btn secondary small" data-action="reset-search">Reset</button>
+      </div>
+      <p class="muted">${state.inboxScope === "my" ? "My Inbox" : "Team Inbox"} ${state.inboxStatus === "all" ? "| All statuses" : `| ${state.inboxStatus.toUpperCase()}`}</p>
+      <div class="metric-grid">
+        <div class="metric"><span>Draft</span><strong>${counts.draft}</strong></div>
+        <div class="metric"><span>In Flight</span><strong>${counts.inflight}</strong></div>
+        <div class="metric"><span>Completed</span><strong>${counts.completed}</strong></div>
+        <div class="metric"><span>Total</span><strong>${rows.length}</strong></div>
+      </div>
+      <table class="data-table">
+        <thead><tr><th class="key-col">Name</th><th>Type</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
+        <tbody>${tableRows || '<tr><td colspan="7">No rows</td></tr>'}</tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderPortfolio() {
+  const statusText = `${state.homeType.toUpperCase()} / ${state.homeStatus.toUpperCase()}`;
+  dom.viewRoot.innerHTML = `
+    <section class="card">
+      <h2>Portfolio Monitoring</h2>
+      <div class="main-search-row">
+        <label for="main-search">Search</label>
+        <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
+        <button class="btn secondary small" data-action="reset-search">Reset</button>
+      </div>
+      <div class="table-filter-row">
+        <select id="table-filter-product"><option value="">Product</option>${optionsFor("product")}</select>
+        <select id="table-filter-segment"><option value="">Client Segment</option>${optionsFor("clientSegment")}</select>
+        <select id="table-filter-cluster"><option value="">Cluster</option>${optionsFor("cluster")}</select>
+        <select id="table-filter-country"><option value="">Country</option>${optionsFor("country")}</select>
+        <button class="btn secondary small" data-action="reset-table-filters">Clear Filters</button>
+        <button class="btn secondary small" data-action="expand-all">Expand All</button>
+        <button class="btn secondary small" data-action="collapse-all">Collapse All</button>
+      </div>
+      <p class="muted">Selected view: ${statusText}${state.filters.product ? ` | Product ${state.filters.product}` : ""}${state.filters.clientSegment ? ` | Segment ${state.filters.clientSegment}` : ""}${state.filters.cluster ? ` | Cluster ${state.filters.cluster}` : ""}${state.filters.country ? ` | Country ${state.filters.country}` : ""}</p>
+    </section>
+    ${renderHierarchyTable()}
+  `;
 }
 
 function renderGroupDetail() {
@@ -601,7 +774,7 @@ function renderGroupDetail() {
 
   const rows = countries.map((c) => {
     const counts = childCounts(c.id);
-    return `<tr><td>${c.country}</td><td>${c.id}</td><td>${statusTag(c.status)}</td><td>${counts.cets}</td><td>${counts.sandboxes}</td><td><a href="${PATH.country(group.id, c.country, c.id)}">Open</a></td></tr>`;
+    return `<tr><td class="key-col">${c.name}<div>${idTag(c.id)}</div></td><td>${countryCell(c.country)}</td><td>${statusTag(c.status)}</td><td>${counts.cets}</td><td>${counts.sandboxes}</td><td>${ownerCell(c.owner)}</td><td><a href="${PATH.country(group.id, c.country, c.id)}">Open</a></td></tr>`;
   }).join("");
 
   dom.viewRoot.innerHTML = `
@@ -613,8 +786,8 @@ function renderGroupDetail() {
     <section class="card" id="cad-basic">
       <h3>Country CADs</h3>
       <table class="data-table">
-        <thead><tr><th>Country</th><th>Country CAD</th><th>Status</th><th>CETs</th><th>Sandboxes</th><th>Action</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">No country CADs</td></tr>'}</tbody>
+        <thead><tr><th class="key-col">Name</th><th>Country</th><th>Status</th><th>CETs</th><th>Sandboxes</th><th>Owner</th><th>Action</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7">No country CADs</td></tr>'}</tbody>
       </table>
     </section>
     <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Programme summary and country rollout status.</p></section>
@@ -653,12 +826,12 @@ function renderCountryDetail() {
     <section class="card" id="cad-basic">
       <h3>Child Tests (parallel tracks)</h3>
       <table class="data-table">
-        <thead><tr><th>Type</th><th>ID</th><th class="key-col">Name (Key)</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
+        <thead><tr><th class="key-col">Name</th><th>Type</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
         <tbody>
           ${[
-            ...cets.map((x) => `<tr><td>CET</td><td>${x.id}</td><td class="key-col">${x.name}</td><td>${statusTag(x.status)}</td><td>${x.owner}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`),
-            ...sandboxes.map((x) => `<tr><td>Sandbox</td><td>${x.id}</td><td class="key-col">${x.name}</td><td>${statusTag(x.status)}</td><td>${x.owner}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`)
-          ].join("") || '<tr><td colspan="6">No child tests</td></tr>'}
+            ...cets.map((x) => `<tr><td class="key-col">${x.name}<div>${idTag(x.id)}</div></td><td>CET</td><td>${statusTag(x.status)}</td><td>${ownerCell(x.owner)}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`),
+            ...sandboxes.map((x) => `<tr><td class="key-col">${x.name}<div>${idTag(x.id)}</div></td><td>Sandbox</td><td>${statusTag(x.status)}</td><td>${ownerCell(x.owner)}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`)
+          ].join("") || '<tr><td colspan="5">No child tests</td></tr>'}
         </tbody>
       </table>
     </section>
@@ -730,6 +903,14 @@ function setBreadcrumb() {
   const r = state.route;
   if (r.view === "home") {
     dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a>`;
+    return;
+  }
+  if (r.view === "inbox") {
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.inbox}">Inbox</a>`;
+    return;
+  }
+  if (r.view === "portfolio") {
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.portfolio}">Portfolio Monitoring</a>`;
     return;
   }
   const group = r.groupCadId ? getGroupById(r.groupCadId) : null;
@@ -870,6 +1051,7 @@ function render() {
   if (state.route.view === "country") state.homeType = "country";
   if (state.route.view === "cet") state.homeType = "cet";
   if (state.route.view === "sandbox") state.homeType = "sandbox";
+  if (state.route.view === "portfolio") state.homeStatus = "all";
   if (routeChanged) {
     state.mobileSectionsOpen = false;
     state.mobileTraceOpen = state.route.view !== "home";
@@ -883,14 +1065,21 @@ function render() {
   renderLeftPanel();
 
   if (state.route.view === "home") renderHome();
+  else if (state.route.view === "inbox") renderInbox();
+  else if (state.route.view === "portfolio") renderPortfolio();
   else if (state.route.view === "group") renderGroupDetail();
   else if (state.route.view === "country") renderCountryDetail();
   else renderCetOrSandbox();
 
   setupSectionSpy();
 
-  const showActions = state.route.view !== "home";
+  const detailRoute = state.route.view === "group" || state.route.view === "country" || state.route.view === "cet" || state.route.view === "sandbox";
+  const showActions = detailRoute;
   dom.actionBar.style.display = showActions ? "flex" : "none";
+  const noRightPanel = !detailRoute;
+  dom.appShell?.classList.toggle("no-right-panel", noRightPanel);
+  if (noRightPanel) state.rightPanel.isOpen = false;
+  dom.backTopFab?.classList.toggle("show", detailRoute && window.scrollY > 260);
 
   recomputeIssues();
   renderIssuePanel();
@@ -1049,6 +1238,36 @@ function initEvents() {
     ) {
       render();
     }
+  });
+
+  dom.createFab?.addEventListener("click", () => {
+    dom.floatMenu?.classList.toggle("open");
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!dom.floatMenu || !dom.createFab) return;
+    const inside = event.target.closest(".fab-create-wrap");
+    if (!inside) dom.floatMenu.classList.remove("open");
+  });
+
+  dom.floatMenu?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-create-type]");
+    if (!btn) return;
+    dom.floatMenu.classList.remove("open");
+    window.alert(`Create ${btn.dataset.createType.toUpperCase()} flow placeholder.`);
+  });
+
+  dom.helpFab?.addEventListener("click", () => {
+    window.alert("Help center placeholder.");
+  });
+
+  dom.backTopFab?.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  window.addEventListener("scroll", () => {
+    const detailRoute = state.route.view === "group" || state.route.view === "country" || state.route.view === "cet" || state.route.view === "sandbox";
+    dom.backTopFab?.classList.toggle("show", detailRoute && window.scrollY > 260);
   });
 }
 

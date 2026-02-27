@@ -42,6 +42,20 @@
     </aside>
   </main>
 
+  <div class="fab-group" aria-label="Quick actions">
+    <button id="help-fab" class="fab secondary" title="Help">?</button>
+    <div class="fab-create-wrap">
+      <div id="create-float-menu" class="fab-menu" aria-hidden="true">
+        <button class="fab-menu-item" data-create-type="group" title="Create Group CAD">Group CAD</button>
+        <button class="fab-menu-item" data-create-type="country" title="Create Country CAD">Country CAD</button>
+        <button class="fab-menu-item" data-create-type="cet" title="Create CET">CET</button>
+        <button class="fab-menu-item" data-create-type="sandbox" title="Create Sandbox">Sandbox</button>
+      </div>
+      <button id="create-fab" class="fab primary" title="Create">+</button>
+    </div>
+    <button id="backtop-fab" class="fab tertiary" title="Back to top" aria-label="Back to top">↑</button>
+  </div>
+
   <div id="drawer-backdrop" class="drawer-backdrop"></div>
   <script src="data/sample-hierarchy.js" defer></script>
   <script src="app.js" defer></script>

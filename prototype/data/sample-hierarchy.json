@@ -5,21 +5,21 @@
     "countries": ["India", "Bangladesh", "Pakistan", "Sri Lanka"]
   },
   "groupCads": [
-    {"id":"G-CAD-1001","name":"SME Programme Lending Framework","product":"SME Loans","clientSegment":"SME","cluster":"Global","owner":"Global Programme Lead","status":"Active"},
-    {"id":"G-CAD-1002","name":"Cards Portfolio Expansion","product":"Credit Cards","clientSegment":"Retail","cluster":"Global","owner":"Cards Risk Lead","status":"In Flight"},
-    {"id":"G-CAD-1003","name":"Personal Loans Growth Charter","product":"Personal Loans","clientSegment":"Retail","cluster":"Global","owner":"Unsecured Lending Lead","status":"Completed"},
-    {"id":"G-CAD-1004","name":"Affluent Wealth Secured Lending","product":"Secured Loans","clientSegment":"Wealth","cluster":"Global","owner":"Wealth Credit Head","status":"Active"},
-    {"id":"G-CAD-1005","name":"Business Working Capital Programme","product":"Business Loans","clientSegment":"Business Banking","cluster":"Global","owner":"Business Risk Lead","status":"In Flight"}
+    {"id":"G-CAD-1001","name":"SME Programme Lending Framework","product":"SME Loans","clientSegment":"SME","cluster":"Global","owner":"Global Programme Lead","status":"Active","exposure":182,"cap":260},
+    {"id":"G-CAD-1002","name":"Cards Portfolio Expansion","product":"Credit Cards","clientSegment":"Retail","cluster":"Global","owner":"Cards Risk Lead","status":"In Flight","exposure":198,"cap":285},
+    {"id":"G-CAD-1003","name":"Personal Loans Growth Charter","product":"Personal Loans","clientSegment":"Retail","cluster":"Global","owner":"Unsecured Lending Lead","status":"Completed","exposure":124,"cap":240},
+    {"id":"G-CAD-1004","name":"Affluent Wealth Secured Lending","product":"Secured Loans","clientSegment":"Wealth","cluster":"Global","owner":"Wealth Credit Head","status":"Active","exposure":172,"cap":255},
+    {"id":"G-CAD-1005","name":"Business Working Capital Programme","product":"Business Loans","clientSegment":"Business Banking","cluster":"Global","owner":"Business Risk Lead","status":"In Flight","exposure":165,"cap":250}
   ],
   "countryCads": [
-    {"id":"C-CAD-IN-01","groupCadId":"G-CAD-1001","country":"India","name":"India SME Lending Country CAD","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"India Country CCO","status":"In Flight"},
-    {"id":"C-CAD-BD-02","groupCadId":"G-CAD-1001","country":"Bangladesh","name":"Bangladesh SME Lending Country CAD","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"Bangladesh Country CCO","status":"Completed"},
-    {"id":"C-CAD-PK-03","groupCadId":"G-CAD-1001","country":"Pakistan","name":"Pakistan SME Lending Country CAD","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"Pakistan Country CCO","status":"Active"},
-    {"id":"C-CAD-AE-04","groupCadId":"G-CAD-1002","country":"UAE","name":"UAE Cards Country CAD","product":"Credit Cards","clientSegment":"Retail","cluster":"EMEA","owner":"UAE Cards Head","status":"Active"},
-    {"id":"C-CAD-HK-05","groupCadId":"G-CAD-1002","country":"Hong Kong","name":"Hong Kong Cards Country CAD","product":"Credit Cards","clientSegment":"Retail","cluster":"GCNA","owner":"HK Cards Lead","status":"In Flight"},
-    {"id":"C-CAD-KE-06","groupCadId":"G-CAD-1003","country":"Kenya","name":"Kenya Personal Loans Country CAD","product":"Personal Loans","clientSegment":"Retail","cluster":"GCNA","owner":"Kenya CCO","status":"In Flight"},
-    {"id":"C-CAD-SG-07","groupCadId":"G-CAD-1004","country":"Singapore","name":"Singapore Wealth Secured Lending CAD","product":"Secured Loans","clientSegment":"Wealth","cluster":"ASEAN","owner":"Singapore Wealth CCO","status":"Completed"},
-    {"id":"C-CAD-LK-08","groupCadId":"G-CAD-1005","country":"Sri Lanka","name":"Sri Lanka Working Capital CAD","product":"Business Loans","clientSegment":"Business Banking","cluster":"South Asia","owner":"Sri Lanka Business CCO","status":"Active"}
+    {"id":"C-CAD-IN-01","groupCadId":"G-CAD-1001","country":"India","name":"India SME Lending","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"India Country CCO","status":"In Flight","exposure":78,"cap":115},
+    {"id":"C-CAD-BD-02","groupCadId":"G-CAD-1001","country":"Bangladesh","name":"Bangladesh SME Lending","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"Bangladesh Country CCO","status":"Completed","exposure":46,"cap":92},
+    {"id":"C-CAD-PK-03","groupCadId":"G-CAD-1001","country":"Pakistan","name":"Pakistan SME Lending","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"Pakistan Country CCO","status":"Active","exposure":53,"cap":96},
+    {"id":"C-CAD-AE-04","groupCadId":"G-CAD-1002","country":"UAE","name":"UAE Cards Portfolio","product":"Credit Cards","clientSegment":"Retail","cluster":"EMEA","owner":"UAE Cards Head","status":"Active","exposure":68,"cap":104},
+    {"id":"C-CAD-HK-05","groupCadId":"G-CAD-1002","country":"Hong Kong","name":"Hong Kong Cards Portfolio","product":"Credit Cards","clientSegment":"Retail","cluster":"GCNA","owner":"HK Cards Lead","status":"In Flight","exposure":59,"cap":98},
+    {"id":"C-CAD-KE-06","groupCadId":"G-CAD-1003","country":"Kenya","name":"Kenya Personal Loans Portfolio","product":"Personal Loans","clientSegment":"Retail","cluster":"GCNA","owner":"Kenya CCO","status":"In Flight","exposure":52,"cap":82},
+    {"id":"C-CAD-SG-07","groupCadId":"G-CAD-1004","country":"Singapore","name":"Singapore Wealth Secured Lending","product":"Secured Loans","clientSegment":"Wealth","cluster":"ASEAN","owner":"Singapore Wealth CCO","status":"Completed","exposure":44,"cap":88},
+    {"id":"C-CAD-LK-08","groupCadId":"G-CAD-1005","country":"Sri Lanka","name":"Sri Lanka Working Capital","product":"Business Loans","clientSegment":"Business Banking","cluster":"South Asia","owner":"Sri Lanka Business CCO","status":"Active","exposure":49,"cap":84}
   ],
   "cets": [
     {"id":"CET-IN-201","countryCadId":"C-CAD-IN-01","groupCadId":"G-CAD-1001","country":"India","name":"Risk Trigger Tuning","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"India Risk Manager","status":"Active","exposure":62,"cap":100,"result":"In Progress"},
@@ -32,11 +32,11 @@
     {"id":"CET-LK-601","countryCadId":"C-CAD-LK-08","groupCadId":"G-CAD-1005","country":"Sri Lanka","name":"BWC Portfolio Risk Trigger","product":"Business Loans","clientSegment":"Business Banking","cluster":"South Asia","owner":"Sri Lanka Risk Lead","status":"Active","exposure":38,"cap":65,"result":"In Progress"}
   ],
   "sandboxes": [
-    {"id":"SBX-IN-901","countryCadId":"C-CAD-IN-01","groupCadId":"G-CAD-1001","country":"India","name":"Micro Segment Rule Pilot","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"India Business Lead","status":"Active","limit":5},
-    {"id":"SBX-BD-903","countryCadId":"C-CAD-BD-02","groupCadId":"G-CAD-1001","country":"Bangladesh","name":"SME Intake Simplification","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"Bangladesh Business Lead","status":"Completed","limit":3},
-    {"id":"SBX-PK-904","countryCadId":"C-CAD-PK-03","groupCadId":"G-CAD-1001","country":"Pakistan","name":"SME Offer Funnel Pilot","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"Pakistan Business Lead","status":"In Flight","limit":4},
-    {"id":"SBX-AE-905","countryCadId":"C-CAD-AE-04","groupCadId":"G-CAD-1002","country":"UAE","name":"Card Campaign Sandbox","product":"Credit Cards","clientSegment":"Retail","cluster":"EMEA","owner":"UAE Campaign Lead","status":"Active","limit":6},
-    {"id":"SBX-KE-906","countryCadId":"C-CAD-KE-06","groupCadId":"G-CAD-1003","country":"Kenya","name":"Rapid Offer Sandbox","product":"Personal Loans","clientSegment":"Retail","cluster":"GCNA","owner":"Kenya Business Lead","status":"In Flight","limit":4},
-    {"id":"SBX-LK-907","countryCadId":"C-CAD-LK-08","groupCadId":"G-CAD-1005","country":"Sri Lanka","name":"Working Capital Offer Pilot","product":"Business Loans","clientSegment":"Business Banking","cluster":"South Asia","owner":"Sri Lanka Business Lead","status":"Completed","limit":2}
+    {"id":"SBX-IN-901","countryCadId":"C-CAD-IN-01","groupCadId":"G-CAD-1001","country":"India","name":"Micro Segment Rule Pilot","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"India Business Lead","status":"Active","exposure":3,"cap":5,"limit":5},
+    {"id":"SBX-BD-903","countryCadId":"C-CAD-BD-02","groupCadId":"G-CAD-1001","country":"Bangladesh","name":"SME Intake Simplification","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"Bangladesh Business Lead","status":"Completed","exposure":2,"cap":3,"limit":3},
+    {"id":"SBX-PK-904","countryCadId":"C-CAD-PK-03","groupCadId":"G-CAD-1001","country":"Pakistan","name":"SME Offer Funnel Pilot","product":"SME Loans","clientSegment":"SME","cluster":"South Asia","owner":"Pakistan Business Lead","status":"In Flight","exposure":3,"cap":4,"limit":4},
+    {"id":"SBX-AE-905","countryCadId":"C-CAD-AE-04","groupCadId":"G-CAD-1002","country":"UAE","name":"Card Campaign Sandbox","product":"Credit Cards","clientSegment":"Retail","cluster":"EMEA","owner":"UAE Campaign Lead","status":"Active","exposure":4,"cap":6,"limit":6},
+    {"id":"SBX-KE-906","countryCadId":"C-CAD-KE-06","groupCadId":"G-CAD-1003","country":"Kenya","name":"Rapid Offer Sandbox","product":"Personal Loans","clientSegment":"Retail","cluster":"GCNA","owner":"Kenya Business Lead","status":"In Flight","exposure":3,"cap":4,"limit":4},
+    {"id":"SBX-LK-907","countryCadId":"C-CAD-LK-08","groupCadId":"G-CAD-1005","country":"Sri Lanka","name":"Working Capital Offer Pilot","product":"Business Loans","clientSegment":"Business Banking","cluster":"South Asia","owner":"Sri Lanka Business Lead","status":"Completed","exposure":1,"cap":2,"limit":2}
   ]
 }
