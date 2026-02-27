@@ -10,7 +10,7 @@
   <header class="topbar">
     <div>
       <h1>Credit Workspace</h1>
-      <p id="breadcrumb" class="breadcrumb">Home</p>
+      <p id="breadcrumb" class="breadcrumb">Credit Approvals</p>
     </div>
     <div class="actions" id="action-bar">
       <button id="save-btn" class="btn secondary">Save Draft</button>
@@ -43,7 +43,15 @@
   </main>
 
   <div class="fab-group" aria-label="Quick actions">
-    <button id="help-fab" class="fab secondary" title="Help">?</button>
+    <div class="fab-help-wrap">
+      <div id="help-float-menu" class="fab-menu" aria-hidden="true">
+        <button class="fab-menu-item" data-help-type="docs" title="Documentation">Documentation</button>
+        <button class="fab-menu-item" data-help-type="approver" title="Find your approver">Find Your Approver</button>
+        <button class="fab-menu-item" data-help-type="demo" title="Demo mode">Demo Mode</button>
+        <button class="fab-menu-item" data-help-type="chat" title="Contact Credit chat">Contact Credit Chat</button>
+      </div>
+      <button id="help-fab" class="fab secondary" title="Help">?</button>
+    </div>
     <div class="fab-create-wrap">
       <div id="create-float-menu" class="fab-menu" aria-hidden="true">
         <button class="fab-menu-item" data-create-type="group" title="Create Group CAD">Group CAD</button>

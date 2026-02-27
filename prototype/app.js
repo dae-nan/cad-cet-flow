@@ -38,18 +38,43 @@ const state = {
   searchTerm: "",
   filters: {
     myDocs: false,
-    product: "",
-    clientSegment: "",
+    product: [],
+    clientSegment: [],
     cluster: "",
-    country: ""
+    country: []
   },
   homeType: "group",
   homeStatus: "Active",
+  portfolioType: "all",
   quickView: "none",
   inboxScope: "my",
   inboxStatus: "all",
+  sorters: {
+    home: [],
+    inbox: [],
+    portfolio: [
+      { key: "type", dir: "asc" },
+      { key: "country", dir: "asc" },
+      { key: "clientSegment", dir: "asc" },
+      { key: "product", dir: "asc" },
+      { key: "name", dir: "asc" }
+    ],
+    groupDetail: [],
+    countryDetail: []
+  },
+  visibleColumns: {
+    home: { legalEntity: false, id: false },
+    inbox: { legalEntity: false, id: false },
+    portfolio: { legalEntity: false, id: false, owner: false, type: false },
+    groupDetail: { legalEntity: false, id: false },
+    countryDetail: { legalEntity: false, id: false }
+  },
+  portfolioColumnOrder: [],
+  openColumnMenu: "",
+  openHelpMenu: false,
   expandedGroups: new Set(),
   expandedCountries: new Set(),
+  hierarchyInitialized: true,
   activeSectionId: "",
   sectionObserver: null,
   lastRouteView: "home",
@@ -84,6 +109,7 @@ const dom = {
   filterButtons: [...document.querySelectorAll(".filter")],
   appShell: document.getElementById("app-shell"),
   floatMenu: document.getElementById("create-float-menu"),
+  helpMenu: document.getElementById("help-float-menu"),
   createFab: document.getElementById("create-fab"),
   helpFab: document.getElementById("help-fab"),
   backTopFab: document.getElementById("backtop-fab")
@@ -104,8 +130,18 @@ function uniqueValues(rows, key) {
   return [...new Set(rows.map((r) => r[key]).filter(Boolean))].sort();
 }
 
+function filterValues(key) {
+  const v = state.filters[key];
+  if (Array.isArray(v)) return v;
+  if (v === "" || v == null) return [];
+  return [v];
+}
+
 function applyCommonFilters(rows, opts = {}) {
   const term = state.searchTerm.trim().toLowerCase();
+  const productFilters = filterValues("product");
+  const segmentFilters = filterValues("clientSegment");
+  const countryFilters = filterValues("country");
   return rows.filter((row) => {
     const myDocsActive = state.filters.myDocs || state.quickView === "mydocs";
     if (myDocsActive) {
@@ -116,10 +152,10 @@ function applyCommonFilters(rows, opts = {}) {
       const util = Number(row.exposure) / Math.max(1, Number(row.cap || 0));
       if (!Number.isFinite(util) || util < 0.8) return false;
     }
-    if (state.filters.product && row.product !== state.filters.product) return false;
-    if (state.filters.clientSegment && row.clientSegment !== state.filters.clientSegment) return false;
+    if (productFilters.length && !productFilters.includes(row.product)) return false;
+    if (segmentFilters.length && !segmentFilters.includes(row.clientSegment)) return false;
     if (state.filters.cluster && row.cluster !== state.filters.cluster) return false;
-    if (state.filters.country && row.country !== state.filters.country) return false;
+    if (countryFilters.length && !countryFilters.includes(row.country)) return false;
     if (opts.ignoreSearch || !term) return true;
 
     const haystack = [row.id, row.name, row.country, row.owner, row.product, row.clientSegment]
@@ -187,6 +223,12 @@ function navIcon(name) {
     country: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M512 96a416 416 0 100 832 416 416 0 000-832zm-43 78c-42 50-72 128-82 222H220c33-101 124-181 249-222zm-96 300c8 98 37 185 79 244H250c-31-65-48-139-50-218 0-9 0-17 1-26zm139 346c-31-34-56-81-72-138h144c-16 57-41 104-72 138zm87-198H425c-10-60-15-124-15-190 0-65 5-129 15-188h174c10 59 15 123 15 188 0 66-5 130-15 190zm27 198c31-34 56-81 72-138h144c-16 57-41 104-72 138zm93-198c42-59 71-146 79-244h172c1 9 1 17 1 26-2 79-19 153-50 218zm79-304c-10-94-40-172-82-222 125 41 216 121 249 222z"/></svg>',
     cet: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M320 128h384v96H320zm80 128h224v112l168 288a112 112 0 01-97 168H329a112 112 0 01-97-168l168-288z"/></svg>',
     sandbox: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M128 288l384-160 384 160-384 160zm64 96l320 133 320-133v208L512 752 192 592zm0 272l320 133 320-133v80L512 869 192 736z"/></svg>',
+    inbox: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M128 224h768v576H128zm112 112v352h544V336zm48 272h448v80H288z"/></svg>',
+    portfolio: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M160 832h704v64H160zM192 576h128v224H192zm256-160h128v384H448zm256-192h128v576H704z"/></svg>',
+    filter: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M160 224h704v64H160zm128 256h448v64H288zm128 256h192v64H416z"/></svg>',
+    all: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M128 128h320v320H128zm448 0h320v320H576zM128 576h320v320H128zm448 0h320v320H576z"/></svg>',
+    mine: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M512 128a192 192 0 110 384 192 192 0 010-384zm-320 704a320 320 0 01640 0H192z"/></svg>',
+    alert: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M480 128h64l288 544H192zm32 640a48 48 0 110 96 48 48 0 010-96zm-32-384h64v224h-64z"/></svg>',
     file: '<svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M256 96h384l192 192v640H256zM576 160v192h192"/></svg>'
   };
   return `<span class="ant-icon">${icons[name] || icons.file}</span>`;
@@ -303,12 +345,32 @@ function optionsFor(key) {
     ...state.data.cets,
     ...state.data.sandboxes
   ];
+  const selected = filterValues(key);
   return uniqueValues(rows, key)
-    .map((v) => `<option value="${v}" ${state.filters[key] === v ? "selected" : ""}>${v}</option>`)
+    .map((v) => `<option value="${v}" ${selected.includes(v) ? "selected" : ""}>${v}</option>`)
     .join("");
 }
 
+function renderTagMultiSelect(key, label) {
+  const rows = [
+    ...state.data.groupCads,
+    ...state.data.countryCads,
+    ...state.data.cets,
+    ...state.data.sandboxes
+  ];
+  const values = uniqueValues(rows, key);
+  const selected = filterValues(key);
+  const tagText = selected.length ? selected.map((x) => `<span class="tag-token">${x}</span>`).join("") : `<span class="tag-placeholder">${label}</span>`;
+  return `<details class="tag-select">
+    <summary class="tag-select-trigger"><span class="tag-values">${tagText}</span><span class="tag-caret">▾</span></summary>
+    <div class="tag-select-menu">
+      ${values.map((v) => `<label><input type="checkbox" data-filter-key="${key}" data-filter-value="${v}" ${selected.includes(v) ? "checked" : ""}/> ${v}</label>`).join("")}
+    </div>
+  </details>`;
+}
+
 function statusMatch(type, row) {
+  if (state.route.view === "portfolio") return true;
   if (state.homeType !== type) return true;
   if (state.homeStatus === "all") return true;
   return row.status === state.homeStatus;
@@ -330,6 +392,44 @@ function ownerInitials(owner) {
 
 function ownerCell(owner) {
   return `<span class="owner-cell"><span class="owner-avatar">${ownerInitials(owner)}</span><span class="owner-name">${owner || "Unassigned"}</span></span>`;
+}
+
+function ownerAvatarCell(owner) {
+  return `<span class="owner-cell" title="${owner || "Unassigned"}"><span class="owner-avatar">${ownerInitials(owner)}</span></span>`;
+}
+
+function typeMeta(type) {
+  const t = String(type || "").toUpperCase();
+  const map = {
+    GROUP: { label: "Group CAD", icon: "group" },
+    COUNTRY: { label: "Country CAD", icon: "country" },
+    CET: { label: "CET", icon: "cet" },
+    SANDBOX: { label: "Sandbox", icon: "sandbox" }
+  };
+  return map[t] || { label: t || "Type", icon: "file" };
+}
+
+function typeIconCell(type, cls = "") {
+  const m = typeMeta(type);
+  return `<span class="type-icon ${cls}" title="${m.label}">${navIcon(m.icon)}</span>`;
+}
+
+function productMeta(product) {
+  const map = {
+    "Credit Cards": "CC",
+    "Personal Loans": "PL",
+    "SME Loans": "SME",
+    "Business Loans": "BL",
+    Mortgage: "MTG",
+    "Auto Loans": "AL",
+    Overdraft: "OD"
+  };
+  return { code: map[product] || String(product || "-").split(/\s+/).map((x) => x[0]).join("").slice(0, 3).toUpperCase(), label: product || "-" };
+}
+
+function productCell(product) {
+  const p = productMeta(product);
+  return `<span title="${p.label}">${p.code}</span>`;
 }
 
 function countryMeta(country) {
@@ -356,6 +456,154 @@ function idTag(id) {
   return `<span class="id-tag">${id}</span>`;
 }
 
+function legalEntityIsPrimary(row) {
+  const le = (row.legalEntity || "").trim();
+  if (!le) return true;
+  if (row.country === "UAE" && le === "DIFC") return false;
+  return !/difc/i.test(le);
+}
+
+function legalEntityTag(row) {
+  if (legalEntityIsPrimary(row)) return "";
+  return `<span class="id-tag legal-tag">${row.legalEntity}</span>`;
+}
+
+function rowComparable(row, key) {
+  if (key === "type") {
+    const order = { GROUP: 1, COUNTRY: 2, CET: 3, SANDBOX: 4 };
+    return order[String(row.type || "").toUpperCase()] || 99;
+  }
+  if (key === "country") return row.country || "Global";
+  if (key === "status") return row.status || "";
+  if (key === "inboxStatus") return inboxStatusFor(row);
+  if (key === "utilization") {
+    const exp = Number(row.exposure || 0);
+    const lim = Number(row.cap || row.limit || 1);
+    return Math.round((exp / Math.max(1, lim)) * 100);
+  }
+  if (key === "cetsCount" || key === "sandboxesCount") return Number(row[key] || 0);
+  if (key === "exposure" || key === "cap" || key === "limit") return Number(row[key] || 0);
+  return String(row[key] ?? "").toLowerCase();
+}
+
+function sortRows(rows, tableKey) {
+  const sorters = state.sorters[tableKey] || [];
+  if (!sorters.length) return rows;
+  return [...rows].sort((a, b) => {
+    for (const sorter of sorters) {
+      const av = rowComparable(a, sorter.key);
+      const bv = rowComparable(b, sorter.key);
+      if (av < bv) return sorter.dir === "asc" ? -1 : 1;
+      if (av > bv) return sorter.dir === "asc" ? 1 : -1;
+    }
+    return 0;
+  });
+}
+
+function sortMeta(tableKey, key) {
+  const sorters = state.sorters[tableKey] || [];
+  const idx = sorters.findIndex((x) => x.key === key);
+  if (idx < 0) return "";
+  const s = sorters[idx];
+  return `<span class="sort-meta">${s.dir === "asc" ? "↑" : "↓"}${sorters.length > 1 ? ` ${idx + 1}` : ""}</span>`;
+}
+
+function sortableTh(tableKey, key, label, cls = "") {
+  return `<th class="${cls}"><button class="th-sort" data-sort-table="${tableKey}" data-sort-key="${key}">${label}${sortMeta(tableKey, key)}</button></th>`;
+}
+
+function renderColumnsToggle(tableKey) {
+  const cols = state.visibleColumns[tableKey] || {};
+  if (tableKey === "portfolio") {
+    const options = [
+      { key: "owner", label: "Owner" },
+      { key: "legalEntity", label: "Legal Entity" },
+      { key: "id", label: "ID" }
+    ];
+    return `
+      <div class="columns-wrap">
+        <button class="btn secondary small icon-only" title="Add columns" data-toggle-columns="${tableKey}">☰</button>
+        <div class="columns-menu ${state.openColumnMenu === tableKey ? "open" : ""}">
+          ${options.map((opt) => `<label><input type="checkbox" data-column-table="${tableKey}" data-column-key="${opt.key}" ${cols[opt.key] ? "checked" : ""}/> ${opt.label}</label>`).join("")}
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="columns-wrap">
+      <button class="btn secondary small icon-only" title="Add columns" data-toggle-columns="${tableKey}">☰</button>
+      <div class="columns-menu ${state.openColumnMenu === tableKey ? "open" : ""}">
+        <label><input type="checkbox" data-column-table="${tableKey}" data-column-key="legalEntity" ${cols.legalEntity ? "checked" : ""}/> Legal Entity</label>
+        <label><input type="checkbox" data-column-table="${tableKey}" data-column-key="id" ${cols.id ? "checked" : ""}/> ID</label>
+      </div>
+    </div>`;
+}
+
+function sparkline(row) {
+  const history = row.usageHistory || [42, 45, 48, 50, 53, 56];
+  const max = Math.max(1, ...history);
+  const points = history.map((v, i) => `${(i / Math.max(1, history.length - 1)) * 100},${28 - ((v / max) * 24)}`).join(" ");
+  return `<svg class="sparkline" viewBox="0 0 100 28" aria-hidden="true"><polyline points="${points}" /></svg>`;
+}
+
+function utilizationPct(row) {
+  if (row.id === "GC-APAC-001") return 104;
+  if (row.id === "GC-MEA-002") return 89;
+  const exp = Number(row.exposure || 0);
+  const lim = Number(row.cap || row.limit || 1);
+  return Math.round((exp / Math.max(1, lim)) * 100);
+}
+
+function utilizationClass(pct) {
+  if (pct >= 100) return "danger";
+  if (pct >= 85) return "warn";
+  return "ok";
+}
+
+function utilizationCell(row) {
+  const pct = utilizationPct(row);
+  const cls = utilizationClass(pct);
+  const steps = 5;
+  const active = Math.max(0, Math.min(steps, Math.round((pct / 100) * steps)));
+  return `<div class="util-wrap ${cls}">
+    <div class="util-steps">${new Array(steps).fill(0).map((_, i) => `<span class="util-step ${i < active ? "on" : ""}"></span>`).join("")}</div>
+    <span class="util-num">${pct}%</span>
+  </div>`;
+}
+
+function trendCell(row) {
+  let history = row.usageHistory || [42, 45, 48, 50, 53, 56];
+  if (row.id && row.id === state.data.groupCads?.[0]?.id) {
+    history = [72, 80, 87, 104, 91, 86];
+  }
+  const lim = Math.max(1, Number(row.cap || row.limit || Math.max(...history)));
+  const breaches = [];
+  const near = [];
+  const bars = history.map((v, i) => {
+    const pct = Math.round((Number(v) / lim) * 100);
+    const h = Math.max(8, Math.min(26, Math.round((Number(v) / lim) * 26)));
+    let cls = "ok";
+    if (pct >= 100) {
+      cls = "danger";
+      breaches.push(`M${i + 1}`);
+    } else if (pct >= 85) {
+      cls = "warn";
+      near.push(`M${i + 1}`);
+    }
+    return `<span class="trend-bar ${cls}" style="height:${h}px"></span>`;
+  }).join("");
+  const hint = `${breaches.length ? `Breached: ${breaches.join(", ")}` : "No breach"}${near.length ? ` | Near: ${near.join(", ")}` : ""}`;
+  return `<div class="trend-mini" title="${hint}">
+    <span class="limit-line"></span>
+    <div class="trend-bars">${bars}</div>
+  </div>`;
+}
+
+function formatMoney(row, value) {
+  const num = Number(value || 0);
+  if (row.type === "GROUP") return `$${(num / 1000).toFixed(2)} B`;
+  return `$${num.toFixed(2)} m`;
+}
+
 function openHrefForRow(row, type) {
   if (type === "group") return PATH.group(row.id);
   if (type === "country") return PATH.country(row.groupCadId, row.country, row.id);
@@ -363,91 +611,140 @@ function openHrefForRow(row, type) {
 }
 
 function ensureExpandedDefaults() {
+  if (state.hierarchyInitialized) return;
   if (state.expandedGroups.size === 0) {
     state.data.groupCads.forEach((g, idx) => {
       if (idx < 2) state.expandedGroups.add(g.id);
     });
   }
+  state.hierarchyInitialized = true;
 }
 
 function renderHierarchyTable() {
   ensureExpandedDefaults();
-  const groupRows = applyCommonFilters(state.data.groupCads).filter((g) => statusMatch("group", g));
+  const cols = state.visibleColumns.portfolio;
+  const selectedType = state.portfolioType || "all";
+  const orderedOptional = state.portfolioColumnOrder.filter((k) => cols[k] && k !== "type");
+  const optionalLabel = {
+    owner: "Owner",
+    legalEntity: "Legal Entity",
+    id: "ID"
+  };
+  const depthForType = (type) => {
+    if (type === "GROUP") return 1;
+    if (type === "COUNTRY") return 2;
+    return 3;
+  };
+  const optionalCell = (row, _depth, key) => {
+    if (key === "owner") return `<td>${ownerAvatarCell(row.owner)}</td>`;
+    if (key === "legalEntity") return `<td>${row.legalEntity || "-"}</td>`;
+    if (key === "id") return `<td>${row.id}</td>`;
+    return "<td></td>";
+  };
+  const expanderCell = (row, groupId, countryId, expanded) => {
+    const depth = depthForType(row.type);
+    if (row.type === "GROUP") return `<td class="expander-cell depth-${depth}"><button class="tree-toggle" data-toggle-group="${groupId}">${expanded ? "-" : "+"}</button></td>`;
+    if (row.type === "COUNTRY") return `<td class="expander-cell depth-${depth}"><button class="tree-toggle" data-toggle-country="${groupId}::${countryId}">${expanded ? "-" : "+"}</button></td>`;
+    return `<td class="expander-cell depth-${depth}"><span class="tree-spacer"></span></td>`;
+  };
+  const countryWithTag = (row) => `<div class="country-with-tag">${countryCell(row.country || "Global")}${legalEntityTag(row)}</div>`;
+  const nameCell = (row, href) => {
+    return `<td class="key-col"><div class="name-tree"><a href="${href}">${row.name}</a></div><div class="id-row">${idTag(row.id)}</div></td>`;
+  };
+  const groupRows = sortRows(applyCommonFilters(state.data.groupCads).filter((g) => statusMatch("group", g)).map((g) => ({ type: "GROUP", ...g })), "portfolio");
   const out = [];
+  const colCount = 10 + orderedOptional.length;
 
   for (const group of groupRows) {
-    const countriesAll = applyCommonFilters(
+    const countriesAll = sortRows(applyCommonFilters(
       state.data.countryCads.filter((c) => c.groupCadId === group.id)
-    ).filter((c) => statusMatch("country", c));
+    ).filter((c) => statusMatch("country", c)).map((c) => ({ type: "COUNTRY", ...c })), "portfolio");
 
     let countryOutput = "";
+    let cetOutput = "";
+    let sandboxOutput = "";
     for (const country of countriesAll) {
-      const counts = childCounts(country.id);
       const countryKey = `${group.id}::${country.id}`;
       const countryExpanded = state.expandedCountries.has(countryKey);
-      const cets = applyCommonFilters(state.data.cets.filter((x) => x.countryCadId === country.id)).filter((x) => statusMatch("cet", x));
-      const sbx = applyCommonFilters(state.data.sandboxes.filter((x) => x.countryCadId === country.id)).filter((x) => statusMatch("sandbox", x));
-      const leaves = [
-        ...cets.map((x) => ({ type: "CET", ...x })),
-        ...sbx.map((x) => ({ type: "Sandbox", ...x }))
-      ];
-
-      const leafRows = countryExpanded
-        ? leaves.map((x) => `
+      const cets = sortRows(applyCommonFilters(state.data.cets.filter((x) => x.countryCadId === country.id)).filter((x) => statusMatch("cet", x)), "portfolio");
+      const sbx = sortRows(applyCommonFilters(state.data.sandboxes.filter((x) => x.countryCadId === country.id)).filter((x) => statusMatch("sandbox", x)), "portfolio");
+      const leafRowsAll = (rows) => rows.map((x) => `
             <tr class="leaf">
-              <td></td>
-              <td></td>
-              <td>${x.type}</td>              
-              <td class="key-col hierarchy-name depth-4"><a href="${PATH.detail(group.id, country.country, country.id, x.id)}">${x.name}</a><div>${idTag(x.id)}</div></td>
-              <td>${statusTag(x.status)}</td>
-              <td>${countryCell(x.country)}</td>
-              <td>${ownerCell(x.owner)}</td>
-              <td>${x.exposure || Math.round((x.limit || 10) * 0.65)}</td>
-              <td>${x.cap || x.limit || 10}</td>
-              <td>${Math.round(((x.exposure || Math.round((x.limit || 10) * 0.65)) / Math.max(1, (x.cap || x.limit || 10))) * 100)}%</td>
-            </tr>`)
-            .join("")
-        : "";
+              ${expanderCell(x)}
+              <td>${typeIconCell(x.type, `tiny depth-${depthForType(x.type)}`)}</td>
+              <td>${countryWithTag(x)}</td>
+              <td>${x.clientSegment || "-"}</td>
+              <td>${productCell(x.product)}</td>
+              ${nameCell(x, PATH.detail(group.id, country.country, country.id, x.id))}
+              ${orderedOptional.map((k) => optionalCell(x, 3, k)).join("")}
+              <td class="num-cell">${formatMoney(x, x.exposure || Math.round((x.limit || 10) * 0.65))}</td>
+              <td class="num-cell">${formatMoney(x, x.cap || x.limit || 10)}</td>
+              <td>${utilizationCell(x)}</td>
+              <td>${trendCell(x)}</td>
+            </tr>`).join("");
+      const leafRows = (selectedType === "all" && countryExpanded) ? leafRowsAll([
+        ...cets.map((x) => ({ type: "CET", ...x })),
+        ...sbx.map((x) => ({ type: "SANDBOX", ...x }))
+      ]) : "";
 
-      countryOutput += `
+      const countryRow = `
         <tr class="country-row">
-          <td><button class="tree-toggle" data-toggle-country="${countryKey}">${countryExpanded ? "-" : "+"}</button></td>
-          <td>COUNTRY</td>
-          <td class="key-col hierarchy-name depth-3"><a href="${PATH.country(group.id, country.country, country.id)}">${country.name}</a><div>${idTag(country.id)}</div></td>
-          <td>${statusTag(country.status)}</td>
-          <td>${countryCell(country.country)}</td>
-          <td>${ownerCell(country.owner)}</td>
-          <td>${country.exposure || Math.round(((country.cetExposure || 0) + (country.sandboxExposure || 0) || 42))}</td>
-          <td>${country.cap || country.limit || 100}</td>
-          <td>${Math.round(((country.exposure || 42) / Math.max(1, (country.cap || country.limit || 100))) * 100)}%</td>
+          ${expanderCell(country, group.id, country.id, countryExpanded)}
+          <td>${typeIconCell(country.type || "COUNTRY", `tiny depth-${depthForType(country.type || "COUNTRY")}`)}</td>
+          <td>${countryWithTag(country)}</td>
+          <td>${country.clientSegment || "-"}</td>
+          <td>${productCell(country.product)}</td>
+          ${nameCell(country, PATH.country(group.id, country.country, country.id))}
+          ${orderedOptional.map((k) => optionalCell(country, 2, k)).join("")}
+          <td class="num-cell">${formatMoney(country, country.exposure || Math.round(((country.cetExposure || 0) + (country.sandboxExposure || 0) || 42)))}</td>
+          <td class="num-cell">${formatMoney(country, country.cap || country.limit || 100)}</td>
+          <td>${utilizationCell(country)}</td>
+          <td>${trendCell(country)}</td>
         </tr>
         ${leafRows}`;
+      countryOutput += countryRow;
+      cetOutput += leafRowsAll(cets.map((x) => ({ type: "CET", ...x })));
+      sandboxOutput += leafRowsAll(sbx.map((x) => ({ type: "SANDBOX", ...x })));
     }
 
     const groupExpanded = state.expandedGroups.has(group.id);
-    out.push(`
+    const groupRow = `
       <tr class="group-row">
-        <td><button class="tree-toggle" data-toggle-group="${group.id}">${groupExpanded ? "-" : "+"}</button></td>
-        <td>GROUP</td>
-        <td class="key-col hierarchy-name depth-1"><a href="${PATH.group(group.id)}">${group.name}</a><div>${idTag(group.id)}</div></td>
-        <td>${statusTag(group.status)}</td>
-        <td>${countryCell("Global")}</td>
-        <td>${ownerCell(group.owner)}</td>
-        <td>${group.exposure || 180}</td>
-        <td>${group.cap || 250}</td>
-        <td>${Math.round(((group.exposure || 180) / Math.max(1, (group.cap || 250))) * 100)}%</td>
-      </tr>
-      ${groupExpanded ? countryOutput : ""}`);
+        ${expanderCell(group, group.id, "", groupExpanded)}
+        <td>${typeIconCell(group.type || "GROUP", `tiny depth-${depthForType(group.type || "GROUP")}`)}</td>
+        <td>${countryWithTag({ country: "Global", legalEntity: group.legalEntity })}</td>
+        <td>${group.clientSegment || "-"}</td>
+        <td>${productCell(group.product)}</td>
+        ${nameCell(group, PATH.group(group.id))}
+        ${orderedOptional.map((k) => optionalCell(group, 1, k)).join("")}
+        <td class="num-cell">${formatMoney(group, group.exposure || 180)}</td>
+        <td class="num-cell">${formatMoney(group, group.cap || 250)}</td>
+        <td>${utilizationCell(group)}</td>
+        <td>${trendCell(group)}</td>
+      </tr>`;
+    if (selectedType === "all") out.push(`${groupRow}${groupExpanded ? countryOutput : ""}`);
+    if (selectedType === "group") out.push(groupRow);
+    if (selectedType === "country") out.push(countryOutput);
+    if (selectedType === "cet") out.push(cetOutput);
+    if (selectedType === "sandbox") out.push(sandboxOutput);
   }
 
   return `
-    <section class="card">
-      <h3>Portfolio Exposure Tree</h3>
-      <table class="data-table hierarchy-table">
-        <thead><tr><th></th><th>Type</th><th class="key-col">Name</th><th>Status</th><th>Country</th><th>Owner</th><th>Exposure</th><th>Limit</th><th>Utilization</th></tr></thead>
-        <tbody>${out.join("") || '<tr><td colspan="9">No matching records</td></tr>'}</tbody>
-      </table>
-    </section>`;
+    <table class="data-table hierarchy-table">
+      <thead><tr>
+        <th></th>
+        ${sortableTh("portfolio", "type", "Type")}
+        ${sortableTh("portfolio", "country", "Country")}
+        ${sortableTh("portfolio", "clientSegment", "Segment")}
+        ${sortableTh("portfolio", "product", "Product")}
+        ${sortableTh("portfolio", "name", "Name", "key-col")}
+        ${orderedOptional.map((k) => sortableTh("portfolio", k, optionalLabel[k])).join("")}
+        ${sortableTh("portfolio", "exposure", "Exposure (USD)")}
+        ${sortableTh("portfolio", "cap", "Limit (USD)")}
+        ${sortableTh("portfolio", "utilization", "Utilization")}
+        <th>Trend</th></tr></thead>
+      <tbody>${out.join("") || `<tr><td colspan="${colCount}">No matching records</td></tr>`}</tbody>
+    </table>`;
 }
 
 function renderLeftPanel() {
@@ -461,14 +758,18 @@ function renderLeftPanel() {
   ];
   const assignedToMeCount = allDocs.filter((x) => isAssignedToMeRow(x)).length;
   const assignedToTeamCount = allDocs.filter((x) => isAssignedToTeamRow(x)).length;
+  const myDraftCount = allDocs.filter((x) => isAssignedToMeRow(x) && inboxStatusFor(x) === "Draft").length;
+  const myFlightCount = allDocs.filter((x) => isAssignedToMeRow(x) && inboxStatusFor(x) === "In Flight").length;
+  const teamDraftCount = allDocs.filter((x) => isAssignedToTeamRow(x) && inboxStatusFor(x) === "Draft").length;
+  const teamFlightCount = allDocs.filter((x) => isAssignedToTeamRow(x) && inboxStatusFor(x) === "In Flight").length;
   const alertCount = state.data.cets.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
   const entityTitle = (type) => ({ group: "Group CADs", country: "Country CADs", cet: "CETs", sandbox: "Sandboxes" }[type] || type);
   const rowStatus = (type, status, label) => `
     <button class="side-row ${type === "inbox" ? (state.inboxStatus === status ? "on" : "") : (state.homeType === type && state.homeStatus === status ? "on" : "")}" data-home-type="${type}" data-home-status="${status}">
-      <span>${label}</span>
+      <span>${navIcon("filter")} ${label}</span>
     </button>`;
   const parentType = (type) => `
-    <button class="menu-item ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all">${entityTitle(type)}</button>`;
+    <button class="menu-item with-icon ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all">${navIcon("filter")} <span>${entityTitle(type)}</span></button>`;
   const statusRows = (type) => `
     <div class="side-rows ${state.homeType === type ? "open" : "closed"}">
       ${rowStatus(type, "Active", "ACTIVE")}
@@ -490,7 +791,7 @@ function renderLeftPanel() {
   const detailExpanded = `
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     <div class="menu-group">
-      <a class="menu-item" href="${PATH.home}">Homepage</a>
+      <a class="menu-item" href="${PATH.home}">Credit Approvals</a>
     </div>
     <div class="menu-group">
       <p class="menu-title">Trace</p>
@@ -511,24 +812,24 @@ function renderLeftPanel() {
 
   const pagesGroup = `
     <div class="menu-group">
-      <p class="menu-title">Pages</p>
-      <a class="menu-item ${r.view === "home" ? "active" : ""}" href="${PATH.home}">Homepage</a>
-      <a class="menu-item ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}">Inbox</a>
-      <a class="menu-item ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}">Portfolio Monitoring</a>
+      <p class="menu-title">${navIcon("home")} Pages</p>
+      <a class="menu-item with-icon ${r.view === "home" ? "active" : ""}" href="${PATH.home}">${navIcon("home")} <span>Credit Approvals</span></a>
+      <a class="menu-item with-icon ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}">${navIcon("inbox")} <span>Inbox</span></a>
+      <a class="menu-item with-icon ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}">${navIcon("portfolio")} <span>Portfolio Monitoring</span></a>
     </div>`;
 
   const homeExpanded = `
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     ${pagesGroup}
     <div class="menu-group">
-      <p class="menu-title">Document Filters</p>
+      <p class="menu-title">${navIcon("filter")} Document Filters</p>
       <div class="side-group">${parentType("group")}${statusRows("group")}</div>
       <div class="side-group">${parentType("country")}${statusRows("country")}</div>
       <div class="side-group">${parentType("cet")}${statusRows("cet")}</div>
       <div class="side-group">${parentType("sandbox")}${statusRows("sandbox")}</div>
     </div>
     <div class="menu-group">
-      <p class="menu-title">Action Filters</p>
+      <p class="menu-title">${navIcon("filter")} Action Filters</p>
       <button class="menu-item ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
       <button class="menu-item ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
       <button class="menu-item ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts <span class="mini-badge warn">${alertCount}</span></button>
@@ -538,55 +839,82 @@ function renderLeftPanel() {
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     ${pagesGroup}
     <div class="menu-group">
-      <p class="menu-title">Inbox Filters</p>
+      <p class="menu-title">${navIcon("filter")} Inbox Filters</p>
       <button class="menu-item ${state.inboxScope === "my" ? "active" : ""}" data-inbox-scope="my">My Inbox <span class="mini-badge">${assignedToMeCount}</span></button>
       <div class="side-rows ${state.inboxScope === "my" ? "open" : "closed"}">
-        ${rowStatus("inbox", "Draft", "DRAFT")}
-        ${rowStatus("inbox", "In Flight", "IN FLIGHT")}
+        ${rowStatus("inbox", "Draft", `DRAFT <span class="mini-badge">${myDraftCount}</span>`)}
+        ${rowStatus("inbox", "In Flight", `IN FLIGHT <span class="mini-badge">${myFlightCount}</span>`)}
         ${rowStatus("inbox", "Completed", "COMPLETED")}
       </div>
       <button class="menu-item ${state.inboxScope === "team" ? "active" : ""}" data-inbox-scope="team">Team Inbox <span class="mini-badge">${assignedToTeamCount}</span></button>
       <div class="side-rows ${state.inboxScope === "team" ? "open" : "closed"}">
-        ${rowStatus("inbox", "Draft", "DRAFT")}
-        ${rowStatus("inbox", "In Flight", "IN FLIGHT")}
+        ${rowStatus("inbox", "Draft", `DRAFT <span class="mini-badge">${teamDraftCount}</span>`)}
+        ${rowStatus("inbox", "In Flight", `IN FLIGHT <span class="mini-badge">${teamFlightCount}</span>`)}
         ${rowStatus("inbox", "Completed", "COMPLETED")}
       </div>
-      <button class="side-row ${state.inboxStatus === "all" ? "on" : ""}" data-inbox-status="all"><span>ALL</span></button>
       <p class="muted todo-hint">Team inbox is filtered by signed-in profile countries and products.</p>
     </div>`;
 
   const portfolioExpanded = `
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
-    ${pagesGroup}`;
+    ${pagesGroup}
+    <div class="menu-group">
+      <p class="menu-title">${navIcon("filter")} Portfolio Filters</p>
+      <button class="menu-item with-icon ${state.portfolioType === "all" ? "active" : ""}" data-portfolio-type="all">${navIcon("all")} <span>All</span></button>
+      <button class="menu-item with-icon ${state.portfolioType === "group" ? "active" : ""}" data-portfolio-type="group">${navIcon("group")} <span>Group CAD</span></button>
+      <button class="menu-item with-icon ${state.portfolioType === "country" ? "active" : ""}" data-portfolio-type="country">${navIcon("country")} <span>Country CAD</span></button>
+      <button class="menu-item with-icon ${state.portfolioType === "cet" ? "active" : ""}" data-portfolio-type="cet">${navIcon("cet")} <span>CET</span></button>
+      <button class="menu-item with-icon ${state.portfolioType === "sandbox" ? "active" : ""}" data-portfolio-type="sandbox">${navIcon("sandbox")} <span>Sandbox</span></button>
+    </div>`;
 
   const collapsedHome = `
     <div class="icon-rail">
       <button id="left-toggle" class="icon-pill has-tooltip" aria-label="Expand menu" data-tooltip="Expand menu">${navIcon("menu")}</button>
-      <a class="icon-pill has-tooltip ${r.view === "home" ? "active" : ""}" href="${PATH.home}" aria-label="Home" data-tooltip="Home">${navIcon("home")}</a>
-      <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("file")}</a>
-      <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("country")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "home" ? "active" : ""}" href="${PATH.home}" aria-label="Credit Approvals" data-tooltip="Credit Approvals">${navIcon("home")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("inbox")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("portfolio")}</a>
+      <span class="icon-separator"></span>
       <button class="icon-pill has-tooltip ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" aria-label="Group CADs" data-tooltip="Group CADs">${navIcon("group")}</button>
       <button class="icon-pill has-tooltip ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" aria-label="Country CADs" data-tooltip="Country CADs">${navIcon("country")}</button>
       <button class="icon-pill has-tooltip ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>      
+      <button class="icon-pill has-tooltip ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" aria-label="Sandboxes" data-tooltip="Sandboxes">${navIcon("sandbox")}</button>
+      <span class="icon-separator"></span>
+      <button class="icon-pill has-tooltip ${state.quickView === "none" ? "active" : ""}" data-quick-view="none" aria-label="All Docs" data-tooltip="All Docs">${navIcon("all")}</button>
+      <button class="icon-pill has-tooltip ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs" aria-label="My Docs" data-tooltip="My Docs">${navIcon("mine")}</button>
+      <button class="icon-pill has-tooltip ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts" aria-label="Governance Alerts" data-tooltip="Governance Alerts">${navIcon("alert")}</button>
       ${r.view !== "home" ? `<span class="icon-pill has-tooltip active" aria-label="Opened document" data-tooltip="Opened document">${navIcon("file")}</span>` : ""}
     </div>`;
   const collapsedMinimal = `
     <div class="icon-rail">
       <button id="left-toggle" class="icon-pill has-tooltip" aria-label="Expand menu" data-tooltip="Expand menu">${navIcon("menu")}</button>
-      <a class="icon-pill has-tooltip ${r.view === "home" ? "active" : ""}" href="${PATH.home}" aria-label="Home" data-tooltip="Home">${navIcon("home")}</a>
-      <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("file")}</a>
-      <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("country")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "home" ? "active" : ""}" href="${PATH.home}" aria-label="Credit Approvals" data-tooltip="Credit Approvals">${navIcon("home")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("inbox")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("portfolio")}</a>
+    </div>`;
+  const collapsedPortfolio = `
+    <div class="icon-rail">
+      <button id="left-toggle" class="icon-pill has-tooltip" aria-label="Expand menu" data-tooltip="Expand menu">${navIcon("menu")}</button>
+      <a class="icon-pill has-tooltip ${r.view === "home" ? "active" : ""}" href="${PATH.home}" aria-label="Credit Approvals" data-tooltip="Credit Approvals">${navIcon("home")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("inbox")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("portfolio")}</a>
+      <span class="icon-separator"></span>
+      <button class="icon-pill has-tooltip ${state.portfolioType === "all" ? "active" : ""}" data-portfolio-type="all" aria-label="All" data-tooltip="All">${navIcon("all")}</button>
+      <button class="icon-pill has-tooltip ${state.portfolioType === "group" ? "active" : ""}" data-portfolio-type="group" aria-label="Group CAD" data-tooltip="Group CAD">${navIcon("group")}</button>
+      <button class="icon-pill has-tooltip ${state.portfolioType === "country" ? "active" : ""}" data-portfolio-type="country" aria-label="Country CAD" data-tooltip="Country CAD">${navIcon("country")}</button>
+      <button class="icon-pill has-tooltip ${state.portfolioType === "cet" ? "active" : ""}" data-portfolio-type="cet" aria-label="CET" data-tooltip="CET">${navIcon("cet")}</button>
+      <button class="icon-pill has-tooltip ${state.portfolioType === "sandbox" ? "active" : ""}" data-portfolio-type="sandbox" aria-label="Sandbox" data-tooltip="Sandbox">${navIcon("sandbox")}</button>
     </div>`;
 
   const isCollapsed = dom.leftPanel.classList.contains("collapsed");
   dom.leftPanel.innerHTML = isCollapsed
-    ? (r.view === "home" ? collapsedHome : collapsedMinimal)
+    ? (r.view === "home" ? collapsedHome : r.view === "portfolio" ? collapsedPortfolio : collapsedMinimal)
     : (r.view === "home" ? homeExpanded : r.view === "inbox" ? inboxExpanded : r.view === "portfolio" ? portfolioExpanded : detailExpanded);
 
   const btn = document.getElementById("left-toggle");
   if (btn) {
     btn.addEventListener("click", () => {
       dom.leftPanel.classList.toggle("collapsed");
+      dom.appShell.classList.toggle("left-collapsed", dom.leftPanel.classList.contains("collapsed"));
       renderLeftPanel();
     });
   }
@@ -596,7 +924,7 @@ function renderLeftPanel() {
       if (el.dataset.homeType === "inbox") return;
       state.homeType = el.dataset.homeType;
       state.homeStatus = el.dataset.homeStatus || state.homeStatus;
-      if (state.route.view !== "home") window.location.hash = PATH.home;
+      if (state.route.view !== "home" && state.route.view !== "portfolio") window.location.hash = PATH.home;
       else render();
     });
   });
@@ -618,14 +946,6 @@ function renderLeftPanel() {
     });
   });
 
-  dom.leftPanel.querySelectorAll("[data-inbox-status]").forEach((el) => {
-    el.addEventListener("click", () => {
-      state.inboxStatus = el.dataset.inboxStatus;
-      if (state.route.view !== "inbox") window.location.hash = PATH.inbox;
-      else render();
-    });
-  });
-
   dom.leftPanel.querySelectorAll(".side-row[data-home-type='inbox']").forEach((el) => {
     el.addEventListener("click", () => {
       state.inboxStatus = el.dataset.homeStatus;
@@ -641,6 +961,17 @@ function renderLeftPanel() {
       renderLeftPanel();
     });
   });
+
+  dom.leftPanel.querySelectorAll("[data-portfolio-type]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.portfolioType = el.dataset.portfolioType;
+      state.expandedCountries = new Set();
+      state.expandedGroups = new Set();
+      state.hierarchyInitialized = true;
+      if (state.route.view !== "portfolio") window.location.hash = PATH.portfolio;
+      else render();
+    });
+  });
 }
 
 function renderHome() {
@@ -651,11 +982,17 @@ function renderHome() {
     sandbox: applyCommonFilters(state.data.sandboxes)
   };
 
-  const selectedRows = rows[state.homeType]
-    .filter((x) => state.homeStatus === "all" || x.status === state.homeStatus);
+  const selectedRows = sortRows(
+    rows[state.homeType].filter((x) => state.homeStatus === "all" || x.status === state.homeStatus),
+    "home"
+  );
+  const cols = state.visibleColumns.home;
 
   const selectedTable = selectedRows.map((r) => `<tr>
-    <td class="key-col">${r.name}<div>${idTag(r.id)}</div></td><td>${state.homeType.toUpperCase()}</td><td>${countryCell(r.country)}</td><td>${r.product}</td><td>${statusTag(r.status)}</td><td>${ownerCell(r.owner)}</td><td><a href="${openHrefForRow(r, state.homeType)}">Open</a></td>
+    <td class="key-col">${r.name}<div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
+    ${cols.id ? `<td>${r.id}</td>` : ""}
+    ${cols.legalEntity ? `<td>${r.legalEntity || "-"}</td>` : ""}
+    <td>${countryCell(r.country)}</td><td>${r.product}</td><td>${r.clientSegment || "-"}</td><td>${statusTag(r.status)}</td><td>${ownerCell(r.owner)}</td><td><a href="${openHrefForRow(r, state.homeType)}">Open</a></td>
   </tr>`).join("");
 
   const allRows = [...rows.group, ...rows.country, ...rows.cet, ...rows.sandbox];
@@ -668,18 +1005,31 @@ function renderHome() {
 
   const selectedTableHtml = `
     <section class="card">
-      <h3>Selected View: ${statusText} ${state.quickView !== "none" ? `| ${state.quickView}` : ""}</h3>
+      <div class="panel-head">
+        <h3>Selected View: ${statusText}</h3>
+        ${renderColumnsToggle("home")}
+      </div>
+      <p class="muted">Filters Applied: ${state.quickView !== "none" ? `Action=${state.quickView}` : "Action=All Docs"}${filterValues("product").length ? ` | Product=${filterValues("product").join(", ")}` : ""}${filterValues("clientSegment").length ? ` | Segment=${filterValues("clientSegment").join(", ")}` : ""}${state.searchTerm ? ` | Search=\"${state.searchTerm}\"` : ""}</p>
       <table class="data-table">
-        <thead><tr><th class="key-col">Name</th><th>Type</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
-        <tbody>${selectedTable || '<tr><td colspan="7">No rows</td></tr>'}</tbody>
+        <thead><tr>
+          ${sortableTh("home", "name", "Name", "key-col")}
+          ${cols.id ? sortableTh("home", "id", "ID") : ""}
+          ${cols.legalEntity ? sortableTh("home", "legalEntity", "Legal Entity") : ""}
+          ${sortableTh("home", "country", "Country")}
+          ${sortableTh("home", "product", "Product")}
+          ${sortableTh("home", "clientSegment", "Segment")}
+          ${sortableTh("home", "status", "Status")}
+          ${sortableTh("home", "owner", "Owner")}
+          <th>Action</th></tr></thead>
+        <tbody>${selectedTable || `<tr><td colspan="${7 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
       </table>
     </section>`;
 
   dom.viewRoot.innerHTML = `
     <section class="card">
-      <h2>Homepage</h2>
-      <div class="main-search-row">
-        <label for="main-search">Search</label>
+      <h2>Credit Approvals</h2>
+        <div class="main-search-row">
+          <label for="main-search">Search</label>
         <div class="autocomplete-wrap">
           <input id="main-search" value="${state.searchTerm}" autocomplete="off" placeholder="ID / Name / Owner / Country" />
           ${renderSearchAutocomplete()}
@@ -700,18 +1050,28 @@ function renderHome() {
 
 function renderInbox() {
   const term = state.searchTerm.trim().toLowerCase();
-  const rows = inboxRows().filter((row) => {
+  const cols = state.visibleColumns.inbox;
+  const rows = sortRows(inboxRows().filter((row) => {
     if (!term) return true;
     const haystack = [row.id, row.name, row.owner, row.country, row.product, row.clientSegment].filter(Boolean).join(" ").toLowerCase();
     return haystack.includes(term);
-  });
+  }), "inbox");
   const counts = {
     draft: rows.filter((x) => inboxStatusFor(x) === "Draft").length,
     inflight: rows.filter((x) => inboxStatusFor(x) === "In Flight").length,
     completed: rows.filter((x) => inboxStatusFor(x) === "Completed").length
   };
   const tableRows = rows.map((r) => `<tr>
-    <td class="key-col">${r.name}<div>${idTag(r.id)}</div></td><td>${r.type}</td><td>${countryCell(r.country)}</td><td>${r.product}</td><td>${statusTag(inboxStatusFor(r))}</td><td>${ownerCell(r.owner)}</td><td><a href="${openHrefForRow(r, r.type.toLowerCase())}">Open</a></td>
+    <td class="key-col">${r.name}<div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
+    <td>${r.type}</td>
+    ${cols.id ? `<td>${r.id}</td>` : ""}
+    ${cols.legalEntity ? `<td>${r.legalEntity || "-"}</td>` : ""}
+    <td>${countryCell(r.country)}</td>
+    <td>${r.product}</td>
+    <td>${r.clientSegment || "-"}</td>
+    <td>${statusTag(inboxStatusFor(r))}</td>
+    <td>${ownerCell(r.owner)}</td>
+    <td><a href="${openHrefForRow(r, r.type.toLowerCase())}">Open</a></td>
   </tr>`).join("");
 
   dom.viewRoot.innerHTML = `
@@ -722,43 +1082,67 @@ function renderInbox() {
         <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
         <button class="btn secondary small" data-action="reset-search">Reset</button>
       </div>
-      <p class="muted">${state.inboxScope === "my" ? "My Inbox" : "Team Inbox"} ${state.inboxStatus === "all" ? "| All statuses" : `| ${state.inboxStatus.toUpperCase()}`}</p>
       <div class="metric-grid">
         <div class="metric"><span>Draft</span><strong>${counts.draft}</strong></div>
         <div class="metric"><span>In Flight</span><strong>${counts.inflight}</strong></div>
         <div class="metric"><span>Completed</span><strong>${counts.completed}</strong></div>
         <div class="metric"><span>Total</span><strong>${rows.length}</strong></div>
       </div>
+    </section>
+    <section class="card">
+      <div class="panel-head">
+        <h3>${state.inboxScope === "my" ? "My Inbox" : "Team Inbox"} | ${state.inboxStatus === "all" ? "ALL" : state.inboxStatus.toUpperCase()}</h3>
+        ${renderColumnsToggle("inbox")}
+      </div>
       <table class="data-table">
-        <thead><tr><th class="key-col">Name</th><th>Type</th><th>Country</th><th>Product</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
-        <tbody>${tableRows || '<tr><td colspan="7">No rows</td></tr>'}</tbody>
+        <thead><tr>
+          ${sortableTh("inbox", "name", "Name", "key-col")}
+          ${sortableTh("inbox", "type", "Type")}
+          ${cols.id ? sortableTh("inbox", "id", "ID") : ""}
+          ${cols.legalEntity ? sortableTh("inbox", "legalEntity", "Legal Entity") : ""}
+          ${sortableTh("inbox", "country", "Country")}
+          ${sortableTh("inbox", "product", "Product")}
+          ${sortableTh("inbox", "clientSegment", "Segment")}
+          ${sortableTh("inbox", "inboxStatus", "Status")}
+          ${sortableTh("inbox", "owner", "Owner")}
+          <th>Action</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
       </table>
     </section>
   `;
 }
 
 function renderPortfolio() {
-  const statusText = `${state.homeType.toUpperCase()} / ${state.homeStatus.toUpperCase()}`;
+  const typeMap = { all: "ALL", group: "GROUP", country: "COUNTRY", cet: "CET", sandbox: "SANDBOX" };
+  const statusText = `${typeMap[state.portfolioType] || "ALL"} / ${state.homeStatus.toUpperCase()}`;
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Portfolio Monitoring</h2>
+      <p class="warning-note">Portfolio Monitoring is an experimental feature and currently out of scope.</p>
       <div class="main-search-row">
         <label for="main-search">Search</label>
         <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
         <button class="btn secondary small" data-action="reset-search">Reset</button>
       </div>
-      <div class="table-filter-row">
-        <select id="table-filter-product"><option value="">Product</option>${optionsFor("product")}</select>
-        <select id="table-filter-segment"><option value="">Client Segment</option>${optionsFor("clientSegment")}</select>
-        <select id="table-filter-cluster"><option value="">Cluster</option>${optionsFor("cluster")}</select>
-        <select id="table-filter-country"><option value="">Country</option>${optionsFor("country")}</select>
-        <button class="btn secondary small" data-action="reset-table-filters">Clear Filters</button>
-        <button class="btn secondary small" data-action="expand-all">Expand All</button>
-        <button class="btn secondary small" data-action="collapse-all">Collapse All</button>
+      <div class="table-filter-row portfolio-filter-row">
+        ${renderTagMultiSelect("country", "Country")}
+        ${renderTagMultiSelect("clientSegment", "Segment")}
+        ${renderTagMultiSelect("product", "Product")}
+        <button class="btn secondary small portfolio-clear-btn" data-action="reset-table-filters">Clear</button>
       </div>
-      <p class="muted">Selected view: ${statusText}${state.filters.product ? ` | Product ${state.filters.product}` : ""}${state.filters.clientSegment ? ` | Segment ${state.filters.clientSegment}` : ""}${state.filters.cluster ? ` | Cluster ${state.filters.cluster}` : ""}${state.filters.country ? ` | Country ${state.filters.country}` : ""}</p>
     </section>
-    ${renderHierarchyTable()}
+    <section class="card">
+      <div class="panel-head">
+        <h3>Selected View: ${statusText}</h3>
+        <div class="quick-actions">
+          <button class="btn secondary small" data-action="expand-all">Expand All</button>
+          <button class="btn secondary small" data-action="collapse-all">Collapse All</button>
+          ${renderColumnsToggle("portfolio")}
+        </div>
+      </div>
+      <p class="muted">Filters Applied: Type=${state.homeType.toUpperCase()}${state.homeStatus !== "all" ? ` | Status=${state.homeStatus.toUpperCase()}` : ""}${filterValues("country").length ? ` | Country=${filterValues("country").join(", ")}` : ""}${filterValues("clientSegment").length ? ` | Segment=${filterValues("clientSegment").join(", ")}` : ""}${filterValues("product").length ? ` | Product=${filterValues("product").join(", ")}` : ""}${state.searchTerm ? ` | Search=\"${state.searchTerm}\"` : ""}</p>
+      ${renderHierarchyTable()}
+    </section>
   `;
 }
 
@@ -772,10 +1156,14 @@ function renderGroupDetail() {
     state.data.countryCads.filter((c) => c.groupCadId === state.route.groupCadId)
   );
 
-  const rows = countries.map((c) => {
+  const cols = state.visibleColumns.groupDetail;
+  const rowData = countries.map((c) => {
     const counts = childCounts(c.id);
-    return `<tr><td class="key-col">${c.name}<div>${idTag(c.id)}</div></td><td>${countryCell(c.country)}</td><td>${statusTag(c.status)}</td><td>${counts.cets}</td><td>${counts.sandboxes}</td><td>${ownerCell(c.owner)}</td><td><a href="${PATH.country(group.id, c.country, c.id)}">Open</a></td></tr>`;
-  }).join("");
+    return { ...c, cetsCount: counts.cets, sandboxesCount: counts.sandboxes };
+  });
+  const rows = sortRows(rowData, "groupDetail").map((c) =>
+    `<tr><td class="key-col">${c.name}<div>${idTag(c.id)}${legalEntityTag(c)}</div></td>${cols.id ? `<td>${c.id}</td>` : ""}${cols.legalEntity ? `<td>${c.legalEntity || "-"}</td>` : ""}<td>${countryCell(c.country)}</td><td>${c.clientSegment || "-"}</td><td>${statusTag(c.status)}</td><td>${c.cetsCount}</td><td>${c.sandboxesCount}</td><td>${ownerCell(c.owner)}</td><td><a href="${PATH.country(group.id, c.country, c.id)}">Open</a></td></tr>`
+  ).join("");
 
   dom.viewRoot.innerHTML = `
     <section class="card" id="cad-overview">
@@ -785,9 +1173,22 @@ function renderGroupDetail() {
     </section>
     <section class="card" id="cad-basic">
       <h3>Country CADs</h3>
+      <div class="main-search-row">
+        ${renderColumnsToggle("groupDetail")}
+      </div>
       <table class="data-table">
-        <thead><tr><th class="key-col">Name</th><th>Country</th><th>Status</th><th>CETs</th><th>Sandboxes</th><th>Owner</th><th>Action</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="7">No country CADs</td></tr>'}</tbody>
+        <thead><tr>
+          ${sortableTh("groupDetail", "name", "Name", "key-col")}
+          ${cols.id ? sortableTh("groupDetail", "id", "ID") : ""}
+          ${cols.legalEntity ? sortableTh("groupDetail", "legalEntity", "Legal Entity") : ""}
+          ${sortableTh("groupDetail", "country", "Country")}
+          ${sortableTh("groupDetail", "clientSegment", "Segment")}
+          ${sortableTh("groupDetail", "status", "Status")}
+          ${sortableTh("groupDetail", "cetsCount", "CETs")}
+          ${sortableTh("groupDetail", "sandboxesCount", "Sandboxes")}
+          ${sortableTh("groupDetail", "owner", "Owner")}
+          <th>Action</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No country CADs</td></tr>`}</tbody>
       </table>
     </section>
     <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Programme summary and country rollout status.</p></section>
@@ -808,6 +1209,7 @@ function renderCountryDetail() {
   const sandboxes = applyCommonFilters(state.data.sandboxes.filter((s) => s.countryCadId === countryCad.id));
   const successful = state.data.cets.filter((c) => c.countryCadId === countryCad.id && c.result === "Successful");
 
+  const cols = state.visibleColumns.countryDetail;
   dom.viewRoot.innerHTML = `
     <section class="card" id="cad-overview">
       <h2>Country CAD Detail</h2>
@@ -825,13 +1227,24 @@ function renderCountryDetail() {
     </section>
     <section class="card" id="cad-basic">
       <h3>Child Tests (parallel tracks)</h3>
+      <div class="main-search-row">
+        ${renderColumnsToggle("countryDetail")}
+      </div>
       <table class="data-table">
-        <thead><tr><th class="key-col">Name</th><th>Type</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
+        <thead><tr>
+          ${sortableTh("countryDetail", "name", "Name", "key-col")}
+          ${sortableTh("countryDetail", "type", "Type")}
+          ${cols.id ? sortableTh("countryDetail", "id", "ID") : ""}
+          ${cols.legalEntity ? sortableTh("countryDetail", "legalEntity", "Legal Entity") : ""}
+          ${sortableTh("countryDetail", "clientSegment", "Segment")}
+          ${sortableTh("countryDetail", "status", "Status")}
+          ${sortableTh("countryDetail", "owner", "Owner")}
+          <th>Action</th></tr></thead>
         <tbody>
-          ${[
-            ...cets.map((x) => `<tr><td class="key-col">${x.name}<div>${idTag(x.id)}</div></td><td>CET</td><td>${statusTag(x.status)}</td><td>${ownerCell(x.owner)}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`),
-            ...sandboxes.map((x) => `<tr><td class="key-col">${x.name}<div>${idTag(x.id)}</div></td><td>Sandbox</td><td>${statusTag(x.status)}</td><td>${ownerCell(x.owner)}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`)
-          ].join("") || '<tr><td colspan="5">No child tests</td></tr>'}
+          ${sortRows([
+            ...cets.map((x) => ({ type: "CET", ...x })),
+            ...sandboxes.map((x) => ({ type: "SANDBOX", ...x }))
+          ], "countryDetail").map((x) => `<tr><td class="key-col">${x.name}<div>${idTag(x.id)}${legalEntityTag(x)}</div></td><td>${x.type}</td>${cols.id ? `<td>${x.id}</td>` : ""}${cols.legalEntity ? `<td>${x.legalEntity || "-"}</td>` : ""}<td>${x.clientSegment || "-"}</td><td>${statusTag(x.status)}</td><td>${ownerCell(x.owner)}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`).join("") || `<tr><td colspan="${7 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No child tests</td></tr>`}
         </tbody>
       </table>
     </section>
@@ -902,29 +1315,29 @@ function renderCetOrSandbox() {
 function setBreadcrumb() {
   const r = state.route;
   if (r.view === "home") {
-    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a>`;
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Credit Approvals</a>`;
     return;
   }
   if (r.view === "inbox") {
-    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.inbox}">Inbox</a>`;
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Credit Approvals</a> <span>/</span> <a href="${PATH.inbox}">Inbox</a>`;
     return;
   }
   if (r.view === "portfolio") {
-    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.portfolio}">Portfolio Monitoring</a>`;
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Credit Approvals</a> <span>/</span> <a href="${PATH.portfolio}">Portfolio Monitoring</a>`;
     return;
   }
   const group = r.groupCadId ? getGroupById(r.groupCadId) : null;
   const countryCad = r.countryCadId ? getCountryCadById(r.countryCadId) : null;
   const child = r.childId ? getChildById(r.childId) : null;
   if (r.view === "group") {
-    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a>`;
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Credit Approvals</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a>`;
     return;
   }
   if (r.view === "country") {
-    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a> <span>/</span> <a href="${PATH.country(r.groupCadId, r.country, r.countryCadId)}">${countryCad ? countryCad.country : r.country}</a> <span>/</span> <span>${countryCad ? countryCad.name : r.countryCadId}</span>`;
+    dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Credit Approvals</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a> <span>/</span> <a href="${PATH.country(r.groupCadId, r.country, r.countryCadId)}">${countryCad ? countryCad.country : r.country}</a> <span>/</span> <span>${countryCad ? countryCad.name : r.countryCadId}</span>`;
     return;
   }
-  dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Home</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a> <span>/</span> <a href="${PATH.country(r.groupCadId, r.country, r.countryCadId)}">${countryCad ? countryCad.name : r.countryCadId}</a> <span>/</span> <span>${child ? child.name : r.childId}</span>`;
+  dom.breadcrumb.innerHTML = `<a href="${PATH.home}">Credit Approvals</a> <span>/</span> <a href="${PATH.group(r.groupCadId)}">${group ? group.name : r.groupCadId}</a> <span>/</span> <a href="${PATH.country(r.groupCadId, r.country, r.countryCadId)}">${countryCad ? countryCad.name : r.countryCadId}</a> <span>/</span> <span>${child ? child.name : r.childId}</span>`;
 }
 
 function recomputeIssues() {
@@ -1045,7 +1458,7 @@ function jumpToIssue(id) {
 
 function render() {
   state.route = parseRoute();
-  const isMobile = window.matchMedia("(max-width: 767px)").matches;
+  const compactDevice = window.matchMedia("(max-width: 1024px)").matches;
   const routeChanged = state.lastRouteView !== state.route.view;
   if (state.route.view === "group") state.homeType = "group";
   if (state.route.view === "country") state.homeType = "country";
@@ -1055,12 +1468,14 @@ function render() {
   if (routeChanged) {
     state.mobileSectionsOpen = false;
     state.mobileTraceOpen = state.route.view !== "home";
+    state.openColumnMenu = "";
   }
-  if (isMobile) {
+  if (compactDevice) {
     dom.leftPanel.classList.add("collapsed");
-  } else if (!dom.leftPanel.classList.contains("collapsed")) {
+  } else if (dom.leftPanel.classList.contains("collapsed") && state.route.view !== "home" && state.route.view !== "inbox" && state.route.view !== "portfolio") {
     dom.leftPanel.classList.remove("collapsed");
   }
+  dom.appShell?.classList.toggle("left-collapsed", dom.leftPanel.classList.contains("collapsed"));
   setBreadcrumb();
   renderLeftPanel();
 
@@ -1164,6 +1579,36 @@ function initEvents() {
   });
 
   dom.viewRoot.addEventListener("click", (event) => {
+    const sortBtn = event.target.closest("[data-sort-key]");
+    if (sortBtn) {
+      const table = sortBtn.dataset.sortTable;
+      const key = sortBtn.dataset.sortKey;
+      const current = [...(state.sorters[table] || [])];
+      const idx = current.findIndex((x) => x.key === key);
+      let nextDir = "asc";
+      if (idx >= 0) {
+        nextDir = current[idx].dir === "asc" ? "desc" : current[idx].dir === "desc" ? "none" : "asc";
+        current.splice(idx, 1);
+      }
+      if (nextDir !== "none") {
+        if (table === "portfolio" || event.shiftKey) current.push({ key, dir: nextDir });
+        else current.splice(0, current.length, { key, dir: nextDir });
+      } else if (table !== "portfolio" && !event.shiftKey) {
+        current.splice(0, current.length);
+      }
+      state.sorters[table] = current;
+      render();
+      return;
+    }
+
+    const colToggle = event.target.closest("[data-toggle-columns]");
+    if (colToggle) {
+      const key = colToggle.dataset.toggleColumns;
+      state.openColumnMenu = state.openColumnMenu === key ? "" : key;
+      render();
+      return;
+    }
+
     const acOption = event.target.closest("[data-ac-value]");
     if (acOption) {
       state.searchTerm = acOption.dataset.acValue || "";
@@ -1179,10 +1624,10 @@ function initEvents() {
         render();
       }
       if (action === "reset-table-filters") {
-        state.filters.product = "";
-        state.filters.clientSegment = "";
+        state.filters.product = [];
+        state.filters.clientSegment = [];
         state.filters.cluster = "";
-        state.filters.country = "";
+        state.filters.country = [];
         render();
       }
       if (action === "expand-all") {
@@ -1190,11 +1635,13 @@ function initEvents() {
         state.expandedCountries = new Set(
           state.data.countryCads.map((c) => `${c.groupCadId}::${c.id}`)
         );
+        state.hierarchyInitialized = true;
         render();
       }
       if (action === "collapse-all") {
         state.expandedGroups = new Set();
         state.expandedCountries = new Set();
+        state.hierarchyInitialized = true;
         render();
       }
       return;
@@ -1203,8 +1650,12 @@ function initEvents() {
     const tg = event.target.closest("[data-toggle-group]");
     if (tg) {
       const id = tg.dataset.toggleGroup;
-      if (state.expandedGroups.has(id)) state.expandedGroups.delete(id);
-      else state.expandedGroups.add(id);
+      if (state.expandedGroups.has(id)) {
+        state.expandedGroups.delete(id);
+        state.expandedCountries = new Set(
+          [...state.expandedCountries].filter((x) => !x.startsWith(`${id}::`))
+        );
+      } else state.expandedGroups.add(id);
       render();
       return;
     }
@@ -1226,28 +1677,49 @@ function initEvents() {
       return;
     }
 
-    if (target.id === "table-filter-product") state.filters.product = target.value;
-    if (target.id === "table-filter-segment") state.filters.clientSegment = target.value;
-    if (target.id === "table-filter-cluster") state.filters.cluster = target.value;
-    if (target.id === "table-filter-country") state.filters.country = target.value;
-    if (
-      target.id === "table-filter-product" ||
-      target.id === "table-filter-segment" ||
-      target.id === "table-filter-cluster" ||
-      target.id === "table-filter-country"
-    ) {
+    if (target.dataset.filterKey && target.dataset.filterValue !== undefined) {
+      const key = target.dataset.filterKey;
+      const value = target.dataset.filterValue;
+      const current = new Set(filterValues(key));
+      if (target.checked) current.add(value);
+      else current.delete(value);
+      state.filters[key] = [...current];
       render();
+      return;
+    }
+    if (target.dataset.columnKey && target.dataset.columnTable) {
+      const table = target.dataset.columnTable;
+      const key = target.dataset.columnKey;
+      state.visibleColumns[table][key] = target.checked;
+      if (table === "portfolio") {
+        if (target.checked && !state.portfolioColumnOrder.includes(key)) state.portfolioColumnOrder.push(key);
+        if (!target.checked) state.portfolioColumnOrder = state.portfolioColumnOrder.filter((x) => x !== key);
+      }
+      render();
+      return;
     }
   });
 
   dom.createFab?.addEventListener("click", () => {
+    state.openHelpMenu = false;
+    dom.helpMenu?.classList.remove("open");
     dom.floatMenu?.classList.toggle("open");
   });
 
   document.addEventListener("click", (event) => {
     if (!dom.floatMenu || !dom.createFab) return;
     const inside = event.target.closest(".fab-create-wrap");
+    const insideHelp = event.target.closest(".fab-help-wrap");
+    const insideCols = event.target.closest(".columns-wrap");
     if (!inside) dom.floatMenu.classList.remove("open");
+    if (!insideHelp) {
+      state.openHelpMenu = false;
+      dom.helpMenu?.classList.remove("open");
+    }
+    if (!insideCols && state.openColumnMenu) {
+      state.openColumnMenu = "";
+      render();
+    }
   });
 
   dom.floatMenu?.addEventListener("click", (event) => {
@@ -1258,7 +1730,23 @@ function initEvents() {
   });
 
   dom.helpFab?.addEventListener("click", () => {
-    window.alert("Help center placeholder.");
+    dom.floatMenu?.classList.remove("open");
+    state.openHelpMenu = !state.openHelpMenu;
+    dom.helpMenu?.classList.toggle("open", state.openHelpMenu);
+  });
+
+  dom.helpMenu?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-help-type]");
+    if (!btn) return;
+    const messages = {
+      docs: "Documentation center placeholder.",
+      approver: "Find your approver flow placeholder.",
+      demo: "Demo mode placeholder.",
+      chat: "Contact Credit chat placeholder."
+    };
+    dom.helpMenu.classList.remove("open");
+    state.openHelpMenu = false;
+    window.alert(messages[btn.dataset.helpType] || "Help option placeholder.");
   });
 
   dom.backTopFab?.addEventListener("click", () => {
