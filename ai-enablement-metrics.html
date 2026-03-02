@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>North Star Metric for SDLC Improvement (Speed + Stability)</title>
+
+  <!-- Minimal, no-dependency slide styling -->
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#111a33;
+      --text:#e9edf7;
+      --muted:#aab3cc;
+      --accent:#6ee7b7;
+      --accent2:#93c5fd;
+      --warn:#fbbf24;
+      --bad:#fb7185;
+      --code:#0f172a;
+      --border:rgba(255,255,255,0.12);
+    }
+    html, body { height: 100%; margin:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    .deck { height:100%; overflow:hidden; }
+    .slide {
+      display:none;
+      height:100%;
+      padding: 44px 56px;
+      box-sizing:border-box;
+    }
+    .slide.active { display:block; }
+    .topbar{
+      position:fixed; top:0; left:0; right:0;
+      padding:10px 18px;
+      background: linear-gradient(to bottom, rgba(11,16,32,0.95), rgba(11,16,32,0.55));
+      border-bottom:1px solid var(--border);
+      z-index:10;
+      display:flex; align-items:center; justify-content:space-between;
+      font-size:12px; color:var(--muted);
+    }
+    .kbd { border:1px solid var(--border); padding:2px 6px; border-radius:6px; background:rgba(255,255,255,0.04); color:var(--text); }
+    h1,h2,h3{ margin:0 0 12px 0; line-height:1.2; }
+    h1{ font-size:40px; }
+    h2{ font-size:30px; }
+    h3{ font-size:18px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.06em; }
+    p{ margin: 10px 0; color: var(--text); font-size:16px; }
+    ul{ margin:10px 0 0 18px; color:var(--text); }
+    li{ margin: 6px 0; }
+    .grid{
+      display:grid;
+      gap:16px;
+    }
+    .two{ grid-template-columns: 1.15fr 0.85fr; }
+    .three{ grid-template-columns: 1fr 1fr 1fr; }
+    .card{
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:16px 16px;
+      box-sizing:border-box;
+    }
+    .badge{
+      display:inline-block;
+      font-size:12px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border:1px solid var(--border);
+      color: var(--text);
+      background: rgba(255,255,255,0.04);
+      margin-right:8px;
+      white-space:nowrap;
+    }
+    .badge.lead{ border-color: rgba(110,231,183,0.35); color: var(--accent); }
+    .badge.lag{ border-color: rgba(251,191,36,0.35); color: var(--warn); }
+    .badge.nsm{ border-color: rgba(147,197,253,0.35); color: var(--accent2); }
+    .formula{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      background: var(--code);
+      border:1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 14px;
+      color: var(--text);
+      overflow:auto;
+    }
+    pre{
+      margin:0;
+      background: var(--code);
+      border:1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      overflow:auto;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.35;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+    .muted{ color:var(--muted); }
+    .small{ font-size: 13px; color: var(--muted); }
+    .callout{
+      border-left: 4px solid rgba(110,231,183,0.6);
+      padding-left: 12px;
+      margin-top: 10px;
+      color: var(--text);
+    }
+    .health{
+      border-left: 4px solid rgba(147,197,253,0.55);
+      padding-left: 12px;
+      margin-top: 10px;
+      color: var(--text);
+    }
+    .footer{
+      position:fixed; bottom:10px; left:18px; right:18px;
+      display:flex; justify-content:space-between; align-items:center;
+      color: var(--muted);
+      font-size: 12px;
+      z-index:10;
+      pointer-events:none;
+    }
+    .progress{
+      height: 5px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 999px;
+      overflow:hidden;
+      width: 220px;
+      pointer-events:none;
+    }
+    .bar{
+      height:100%;
+      width:0%;
+      background: linear-gradient(90deg, rgba(110,231,183,0.95), rgba(147,197,253,0.95));
+    }
+    /* Mermaid theme tuning (works when Mermaid is enabled) */
+    .mermaid{
+      background: var(--code);
+      border:1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      overflow:auto;
+    }
+    /* Print */
+    @media print{
+      .topbar, .footer { display:none !important; }
+      .slide{ display:block !important; page-break-after: always; height:auto; }
+      body{ background:white; color:black; }
+      .card, pre, .formula, .mermaid { background:#f7f7fb; color:#111; border-color:#ddd; }
+      .muted{ color:#444; }
+    }
+  </style>
+
+  <!-- Mermaid (optional). If your environment blocks CDNs, the Mermaid code blocks will still show as text. -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <div>North Star Metric for SDLC Improvement (Speed + Stability)</div>
+    <div class="muted">Navigate: <span class="kbd">←</span> <span class="kbd">→</span> | <span class="kbd">Home</span> <span class="kbd">End</span></div>
+  </div>
+
+  <div class="deck" id="deck">
+
+    <!-- Slide 1 -->
+    <section class="slide active">
+      <h1>North Star Metric for SDLC Improvement</h1>
+      <p class="muted">Phase 1 focus: <b>Speed + Stability</b>. Monthly/quarterly review; year-end improvement.</p>
+
+      <div class="grid two" style="margin-top:18px;">
+        <div class="card">
+          <h3>Phase 1 North Star</h3>
+          <div class="formula">
+            <span class="badge nsm">North Star (Phase 1)</span><br/><br/>
+            <b>Reliable Flow Velocity (RFV)</b><br/>
+            RFV = (# Features/Epics shipped to Prod) ÷ (Median Lead Time) × (1 − Escaped Defect Rate)
+          </div>
+
+          <div class="callout">
+            <b>Why this is defensible:</b> rewards shipping + faster flow, and penalises breaking prod.
+          </div>
+
+          <p class="small" style="margin-top:10px;">
+            <span class="badge lead">Leading</span> practices & flow signals you can steer early.
+            <span class="badge lag">Lagging</span> production health tells the truth.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Health overlay (self → team → org)</h3>
+          <div class="health">
+            <b>Phase 1 health goal:</b> improve <b>fitness without injury</b>.<br/><br/>
+            <b>Fitness score</b> = (Steps completed) ÷ (Time) × (1 − Injury rate)<br/>
+            ↳ Steps = shipped features<br/>
+            ↳ Time = lead time<br/>
+            ↳ Injuries = escaped defects/incidents
+          </div>
+
+          <p class="small" style="margin-top:12px;">
+            Don’t start with 47 biomarkers. Start with a simple, steering-friendly score.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 2 -->
+    <section class="slide">
+      <h2>Occam’s Razor: what we measure now vs later</h2>
+      <div class="grid two" style="margin-top:14px;">
+        <div class="card">
+          <h3>Phase 1 (now)</h3>
+          <ul>
+            <li><span class="badge nsm">RFV</span> composite North Star</li>
+            <li><span class="badge lead">Leading</span> Lead time (median), Throughput (# shipped)</li>
+            <li><span class="badge lag">Lagging</span> Escaped defects (severity-defined)</li>
+            <li class="muted">Optional (pick one): Change Failure Rate <i>or</i> MTTR</li>
+          </ul>
+          <div class="callout">
+            <b>Why:</b> small set, hard to game, directly tied to SDLC mechanics.
+          </div>
+        </div>
+        <div class="card">
+          <h3>Phase 2 (postpone)</h3>
+          <ul>
+            <li><span class="badge">Outcome events / adoption</span> (true north later)</li>
+            <li><span class="badge">Predictability</span> (say:do, plan accuracy)</li>
+            <li><span class="badge">AI spend / power users</span> (avoid vanity)</li>
+            <li><span class="badge">Employee sentiment</span> (keep as pulse, not target)</li>
+          </ul>
+          <div class="health">
+            <b>Health parallel:</b> don’t chase VO₂max & body-fat scans while you’re still getting injured weekly.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 3 -->
+    <section class="slide">
+      <h2>Dependency Graph (leading → lagging → North Star)</h2>
+      <div class="grid two" style="margin-top:14px;">
+        <div class="card">
+          <h3>ASCII</h3>
+          <pre>
+[Leading]                                  [Lagging]
+Adoption/Enablement --> Dev/Test Practices --> Release Health --> Org Outcome
+   (training, usage)       (CI/CD, tests)      (incidents)      (RFV / speed+stability)
+          |                      |                 |
+          v                      v                 v
+     (optional)           Test coverage        Escaped defects
+                           Code quality           MTTR/CFR
+          </pre>
+        </div>
+        <div class="card">
+          <h3>Health overlay</h3>
+          <div class="health">
+            <b>Leading:</b> training plan + consistency (habits)<br/>
+            <b>Lagging:</b> injuries + recovery time (truth serum)<br/>
+            <b>North Star:</b> fitness score (progress without injury)
+          </div>
+          <p class="small" style="margin-top:10px;">
+            If you only track lagging, you learn too late. If you only track leading, you can delude yourself.
+          </p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>Mermaid</h3>
+        <div class="mermaid">
+flowchart LR
+  A[Activation/Enablement\n(Training, tool access)\nLeading] --> B[Engineering Practices\n(CI/CD, reviews, tests)\nLeading]
+  B --> C[Release Health\n(Change failure rate, MTTR)\nLagging]
+  C --> D[North Star: RFV\nThroughput / Lead Time × (1 - Escape Rate)\nLagging-ish]
+  B --> E[Test Coverage / Quality Signals\nLeading]
+  C --> F[Escaped Defects\nLagging]
+        </div>
+        <p class="small">If Mermaid does not render (locked-down environment), the diagram still reads as text.</p>
+      </div>
+    </section>
+
+    <!-- Slide 4 -->
+    <section class="slide">
+      <h2>Metrics mapped to SDLC: Double Diamond + Scrum</h2>
+
+      <div class="grid two" style="margin-top:14px;">
+        <div class="card">
+          <h3>ASCII (left → right)</h3>
+          <pre>
+Discover      Define        Build (Sprints)            Release/Run             Learn
+  |             |                |                         |                     |
+[Lead]       [Lead]           [Lead]                    [Lag]                 [Lead->Lag]
+Idea rate   Ready backlog   Cycle time, WIP,          CFR/MTTR,              Outcome events
+quality     quality         Test coverage trend       Escaped defects        (Phase 2)
+            (DoR)           Code quality
+                 \___________________________  North Star RFV  _______________________/
+          </pre>
+        </div>
+
+        <div class="card">
+          <h3>Health overlay</h3>
+          <div class="health">
+            <b>Discover/Define:</b> diagnose + plan (what are we solving?)<br/>
+            <b>Build:</b> training sessions (progressive overload, form checks)<br/>
+            <b>Release/Run:</b> injury/strain signals (incidents, escapes)<br/>
+            <b>Learn:</b> review results → adjust plan (feedback loop)
+          </div>
+          <p class="small" style="margin-top:10px;">
+            Discovery without delivery is “reading about fitness.” Delivery without learning is “random workouts.”
+          </p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>Mermaid</h3>
+        <div class="mermaid">
+flowchart LR
+  subgraph DD[Double Diamond + Scrum]
+    D1[Discover\nProblem clarity\n(Leading)] --> D2[Define\nDoR quality\n(Leading)]
+    D2 --> D3[Build\nCycle time/WIP\nTests trend\n(Leading)]
+    D3 --> D4[Release+Run\nEscapes, MTTR/CFR\n(Lagging)]
+    D4 --> D5[Learn\nInsights -> backlog\n(Leading)]
+  end
+
+  NS[North Star (Phase 1)\nRFV = Shipped ÷ LeadTime × (1-EscapeRate)] --- D3
+  NS --- D4
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 5 -->
+    <section class="slide">
+      <h2>Squad → Hive → Org roll-up (Spotify scaling)</h2>
+
+      <div class="grid two" style="margin-top:14px;">
+        <div class="card">
+          <h3>ASCII</h3>
+          <pre>
+SQUAD METRICS (weekly/monthly)     HIVE AGGREGATION (monthly/quarterly)     ORG VIEW (quarterly/year)
+- Lead time (median)              - Weighted RFV across squads              - RFV trend + variance
+- # features shipped              - Bottleneck heatmap by stage             - Top 3 systemic constraints
+- Escaped defect rate             - Shared platform constraints             - Investment decisions
+          \___________________________ roll-up _________________________________/
+          </pre>
+
+          <div class="callout">
+            <b>Anti-gaming rule:</b> weight roll-up by consistent size bands (S/M/L) or stable points.
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Health overlay</h3>
+          <div class="health">
+            <b>Self (squad):</b> your weekly plan + injury rate<br/>
+            <b>Team (hive):</b> shared constraints (equipment, coaching, schedule)<br/>
+            <b>Org:</b> systemic bottlenecks (facility limits, policy, funding)
+          </div>
+          <p class="small" style="margin-top:10px;">
+            If the gym has 2 squat racks for 80 people, “personal effort” won’t fix throughput.
+          </p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>Mermaid</h3>
+        <div class="mermaid">
+flowchart LR
+  S[Squad\nLead time\nThroughput\nEscapes] --> H[Hive\nWeighted RFV\nConstraint map]
+  H --> O[Org\nRFV trend + variance\nSystem constraints\nPortfolio actions]
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 6 -->
+    <section class="slide">
+      <h2>Learning loop to business outcomes (dotted line)</h2>
+
+      <div class="grid two" style="margin-top:14px;">
+        <div class="card">
+          <h3>ASCII</h3>
+          <pre>
+SDLC Flow (RFV)  --->  Delivery Capability  --->  Business Outcomes (Phase 2)
+     ^                                                   |
+     |.............. Learning loop (insights/telemetry)...|
+          </pre>
+
+          <div class="callout">
+            <b>Phase 2 true north:</b> shift from “features shipped” to “outcome events achieved.”
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Health overlay</h3>
+          <div class="health">
+            <b>Phase 1:</b> build consistent, injury-free training flow<br/>
+            <b>Phase 2:</b> outcomes (body comp, cardio fitness, performance)<br/>
+            <b>Dotted loop:</b> measure → learn → adjust the plan
+          </div>
+          <p class="small" style="margin-top:10px;">
+            Outcomes become meaningful once the delivery “metabolism” is stable.
+          </p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>Mermaid</h3>
+        <div class="mermaid">
+flowchart LR
+  RFV[RFV (Phase 1): Speed+Stability] --> Cap[Delivery Capability]
+  Cap --> BO[Business Outcomes (Phase 2)\nUsage/outcome events, value]
+  BO -. telemetry + learnings .-> Disc[Discovery insights -> backlog]
+  Disc --> RFV
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 7 -->
+    <section class="slide">
+      <h2>Leading vs lagging (legend + governance guardrails)</h2>
+
+      <div class="grid two" style="margin-top:14px;">
+        <div class="card">
+          <h3>Legend (minimal)</h3>
+          <ul>
+            <li><span class="badge lead">Leading</span> DoR quality, WIP, cycle time, test trend, build health</li>
+            <li><span class="badge lag">Lagging</span> escaped defects, MTTR/CFR, incident rate, customer pain</li>
+            <li><span class="badge nsm">North Star</span> RFV (composite) — use sub-metrics to drive action</li>
+          </ul>
+
+          <div class="callout">
+            <b>Guardrails:</b><br/>
+            1) Fix “feature shipped” definition (size banding).<br/>
+            2) Pick one lead time definition and stick to it (Idea→Prod or Commit→Prod).<br/>
+            3) Severity threshold for escaped defects (so teams don’t relabel reality).
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Health overlay</h3>
+          <div class="health">
+            <b>Leading:</b> training consistency + technique checks (steerable)<br/>
+            <b>Lagging:</b> injuries + performance results (truth)<br/>
+            <b>Guardrails:</b> standardise what counts as a “workout,” “injury,” and “time-to-results.”
+          </div>
+          <p class="small" style="margin-top:10px;">
+            Without standard definitions, the metric becomes politics.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 8 -->
+    <section class="slide">
+      <h2>One-slide executive summary</h2>
+
+      <div class="card">
+        <h3>Phase 1: Speed + Stability</h3>
+        <div class="formula">
+          <span class="badge nsm">North Star</span><br/><br/>
+          <b>Reliable Flow Velocity (RFV)</b><br/>
+          RFV = (# Features/Epics shipped) ÷ (Median Lead Time) × (1 − Escaped Defect Rate)
+        </div>
+
+        <div class="grid three" style="margin-top:14px;">
+          <div class="card" style="background:rgba(255,255,255,0.03);">
+            <h3>Leading</h3>
+            <ul>
+              <li>DoR quality</li>
+              <li>WIP + cycle time</li>
+              <li>Test trend</li>
+            </ul>
+          </div>
+          <div class="card" style="background:rgba(255,255,255,0.03);">
+            <h3>Lagging</h3>
+            <ul>
+              <li>Escaped defects</li>
+              <li>MTTR or CFR</li>
+              <li>Incident rate</li>
+            </ul>
+          </div>
+          <div class="card" style="background:rgba(255,255,255,0.03);">
+            <h3>Phase 2</h3>
+            <ul>
+              <li>Outcome events</li>
+              <li>Adoption/value</li>
+              <li>Predictability</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="health" style="margin-top:12px;">
+          <b>Health analogy:</b> improve “fitness without injury” first; then measure performance outcomes.
+        </div>
+      </div>
+
+      <p class="small" style="margin-top:12px;">
+        End-state: RFV improves → delivery capability stabilises → outcome events become the true north.
+      </p>
+    </section>
+
+  </div>
+
+  <div class="footer">
+    <div id="counter">Slide 1 / 8</div>
+    <div class="progress"><div class="bar" id="bar"></div></div>
+  </div>
+
+  <script>
+    // Basic slide navigation
+    (function(){
+      const slides = Array.from(document.querySelectorAll('.slide'));
+      let idx = 0;
+
+      function render(){
+        slides.forEach((s,i)=>s.classList.toggle('active', i===idx));
+        const counter = document.getElementById('counter');
+        counter.textContent = `Slide ${idx+1} / ${slides.length}`;
+        const bar = document.getElementById('bar');
+        bar.style.width = `${((idx+1)/slides.length)*100}%`;
+        // Re-render mermaid on each slide (safe, idempotent)
+        if (window.mermaid) {
+          try {
+            mermaid.initialize({ startOnLoad: false, theme: "dark" });
+            const active = slides[idx];
+            const diagrams = active.querySelectorAll('.mermaid');
+            diagrams.forEach(d => {
+              // If already rendered, skip
+              if (d.getAttribute('data-processed') === 'true') return;
+              mermaid.run({ nodes: [d] });
+            });
+          } catch(e) {
+            // If Mermaid cannot run, do nothing; text still shows.
+          }
+        }
+      }
+
+      function clamp(n){ return Math.max(0, Math.min(slides.length-1, n)); }
+      function go(n){ idx = clamp(n); render(); }
+
+      window.addEventListener('keydown', (e)=>{
+        if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') go(idx+1);
+        if (e.key === 'ArrowLeft'  || e.key === 'PageUp') go(idx-1);
+        if (e.key === 'Home') go(0);
+        if (e.key === 'End') go(slides.length-1);
+      });
+
+      // Tap/click right half to advance, left half to go back (mobile friendly)
+      window.addEventListener('click', (e)=>{
+        const w = window.innerWidth;
+        if (e.clientX > w * 0.55) go(idx+1);
+        else if (e.clientX < w * 0.45) go(idx-1);
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>
