@@ -18,11 +18,18 @@ const CAD_SECTIONS = [
   { id: "cad-attachments", label: "Attachments" }
 ];
 const CET_SECTIONS = [
-  { id: "cet-overview", label: "Overview" },
-  { id: "cet-parameters", label: "Parameters" },
-  { id: "cet-triggers", label: "Triggers & Caps" },
-  { id: "cet-risk", label: "Risk / Exceptions" },
-  { id: "cet-approvals", label: "Approvals" }
+  { id: "cet-overview", label: "A Summary" },
+  { id: "cet-objective", label: "B Objective" },
+  { id: "cet-testing", label: "C Testing Criteria" },
+  { id: "cet-portfolio", label: "D Portfolio Analysis" },
+  { id: "cet-financial", label: "E Financial Projection" },
+  { id: "cet-customer-impact", label: "F Customer Impact" },
+  { id: "cet-risk", label: "G Credit Risk Assessment" },
+  { id: "cet-exceptions", label: "H Exceptions" },
+  { id: "cet-commentary", label: "I WRB Commentary" },
+  { id: "cet-other-risks", label: "J Other Risks" },
+  { id: "cet-approvals-1lod", label: "K 1LOD Proposal" },
+  { id: "cet-approvals-2lod", label: "L 2LOD Approval" }
 ];
 const SANDBOX_SECTIONS = [
   { id: "sbx-overview", label: "Overview" },
@@ -30,6 +37,33 @@ const SANDBOX_SECTIONS = [
   { id: "sbx-guardrails", label: "Guardrails" },
   { id: "sbx-evidence", label: "Evidence" }
 ];
+const CET_FORM_CONFIG = {
+  version: "1.0",
+  sections: CET_SECTIONS.map((section) => {
+    const ownerRoleDefault = section.id.includes("risk") || section.id.includes("commentary") || section.id.endsWith("2lod")
+      ? "2LOD"
+      : "1LOD";
+    return { id: section.id, label: section.label, enabled: true, ownerRoleDefault };
+  }),
+  guardrails: {
+    mode: "dual-limit",
+    rules: [
+      { ruleId: "GOV-CAD-UTIL-001", boundaryType: "parentCad", thresholdPct: 85, severity: "Blocker" },
+      { ruleId: "GOV-SEG-CONC-004", boundaryType: "segmentCap", thresholdPct: 20, severity: "Warning" }
+    ]
+  },
+  fields: [
+    { id: "name", type: "string", required: true, sectionId: "cet-overview" },
+    { id: "rationale", type: "text", required: true, sectionId: "cet-overview" },
+    { id: "products", type: "string[]", required: true, sectionId: "cet-overview" },
+    { id: "clientSegments", type: "string[]", required: true, sectionId: "cet-overview" },
+    { id: "startDate", type: "date", required: true, sectionId: "cet-overview" },
+    { id: "endDate", type: "date", required: true, sectionId: "cet-overview" },
+    { id: "peakExposure", type: "number", required: true, sectionId: "cet-financial" },
+    { id: "parentCadThresholdPct", type: "number", required: true, sectionId: "cet-risk" },
+    { id: "segmentThresholdPct", type: "number", required: true, sectionId: "cet-risk" }
+  ]
+};
 
 const state = {
   data: null,
@@ -44,10 +78,11 @@ const state = {
     country: []
   },
   homeType: "group",
-  homeStatus: "Active",
+  homeStatus: "ACTIVE",
   portfolioType: "all",
   quickView: "none",
   inboxScope: "my",
+  inboxType: "all",
   inboxStatus: "all",
   sorters: {
     home: [],
@@ -87,7 +122,26 @@ const state = {
   rightPanel: {
     isOpen: false,
     activeFilter: "all",
-    resolvedBannerUntil: 0
+    resolvedBannerUntil: 0,
+    autoHiddenBySection: false
+  },
+  createDrawer: {
+    open: false,
+    step: 1,
+    errors: [],
+    draft: {
+      parentCountryCadId: "",
+      products: [],
+      clientSegments: [],
+      name: "",
+      rationale: "",
+      startDate: "",
+      endDate: ""
+    }
+  },
+  governanceModal: {
+    open: false,
+    issueId: ""
   },
   previousIssueCount: 0
 };
@@ -101,6 +155,7 @@ const dom = {
   validateBtn: document.getElementById("validate-btn"),
   submitBtn: document.getElementById("submit-btn"),
   issuePanel: document.getElementById("issue-panel"),
+  openPanelBtn: document.getElementById("open-panel-btn"),
   issueList: document.getElementById("issue-list"),
   issueSummary: document.getElementById("issue-summary"),
   closePanel: document.getElementById("close-panel"),
@@ -112,7 +167,9 @@ const dom = {
   helpMenu: document.getElementById("help-float-menu"),
   createFab: document.getElementById("create-fab"),
   helpFab: document.getElementById("help-fab"),
-  backTopFab: document.getElementById("backtop-fab")
+  backTopFab: document.getElementById("backtop-fab"),
+  createCetDrawer: document.getElementById("create-cet-drawer"),
+  governanceModal: document.getElementById("governance-modal")
 };
 
 const PATH = {
@@ -135,6 +192,45 @@ function filterValues(key) {
   if (Array.isArray(v)) return v;
   if (v === "" || v == null) return [];
   return [v];
+}
+
+function statusSetForType(type) {
+  if (type === "group" || type === "country" || type === "GROUP" || type === "COUNTRY") {
+    return ["ACTIVE", "RETIRED", "DRAFT"];
+  }
+  if (type === "cet" || type === "sandbox" || type === "CET" || type === "SANDBOX") {
+    return ["DRAFT", "INFLIGHT", "SUCCESS", "FAILED"];
+  }
+  return [];
+}
+
+function normalizeStatus(status, type) {
+  const raw = String(status || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (type === "cad") {
+    if (raw === "ACTIVE") return "ACTIVE";
+    if (raw === "RETIRED") return "RETIRED";
+    if (raw === "DRAFT") return "DRAFT";
+    if (raw === "INFLIGHT") return "DRAFT";
+    if (raw === "COMPLETED" || raw === "SUCCESS") return "RETIRED";
+    if (raw === "FAILED") return "RETIRED";
+    return "DRAFT";
+  }
+  if (raw === "DRAFT") return "DRAFT";
+  if (raw === "INFLIGHT") return "INFLIGHT";
+  if (raw === "SUCCESS" || raw === "COMPLETED" || raw === "ACTIVE") return "SUCCESS";
+  if (raw === "FAILED" || raw === "RETIRED") return "FAILED";
+  return "DRAFT";
+}
+
+function normalizeAllStatuses(data) {
+  data.groupCads = data.groupCads.map((row) => ({ ...row, status: normalizeStatus(row.status, "cad") }));
+  data.countryCads = data.countryCads.map((row) => ({ ...row, status: normalizeStatus(row.status, "cad") }));
+  data.cets = data.cets.map((row) => ({ ...row, status: normalizeStatus(row.status, "child") }));
+  data.sandboxes = data.sandboxes.map((row) => ({ ...row, status: normalizeStatus(row.status, "child") }));
+  if (data.cets[1]) data.cets[1].status = "DRAFT";
+  if (data.cets[6]) data.cets[6].status = "FAILED";
+  if (data.sandboxes[2]) data.sandboxes[2].status = "DRAFT";
+  if (data.sandboxes[4]) data.sandboxes[4].status = "FAILED";
 }
 
 function applyCommonFilters(rows, opts = {}) {
@@ -167,13 +263,14 @@ function applyCommonFilters(rows, opts = {}) {
 }
 
 function isMyScopeRow(row) {
+  if (row.createdByCurrentUser) return true;
   const p = state.data.userProfile;
   if (!p) return false;
   return row.cluster === p.cluster || (p.countries || []).includes(row.country);
 }
 
 function isAssignedToMeRow(row) {
-  return isMyScopeRow(row) || row.status === "In Flight";
+  return isMyScopeRow(row) || row.status === "INFLIGHT";
 }
 
 function teamScopeProducts() {
@@ -199,7 +296,6 @@ function isAssignedToTeamRow(row) {
 }
 
 function inboxStatusFor(row) {
-  if (row.status === "Active") return "Draft";
   return row.status;
 }
 
@@ -212,6 +308,7 @@ function inboxRows() {
   ];
   return allDocs
     .filter((row) => (state.inboxScope === "my" ? isAssignedToMeRow(row) : isAssignedToTeamRow(row)))
+    .filter((row) => state.inboxType === "all" || row.type === state.inboxType)
     .filter((row) => state.inboxStatus === "all" || inboxStatusFor(row) === state.inboxStatus);
 }
 
@@ -338,6 +435,425 @@ function getChildById(id) {
   return state.data.cets.find((x) => x.id === id) || state.data.sandboxes.find((x) => x.id === id);
 }
 
+function clampPct(num) {
+  return Math.max(0, Math.min(200, Number(num || 0)));
+}
+
+function formatPct(value) {
+  return `${Number(value || 0).toFixed(1)}%`;
+}
+
+function toNum(value, fallback = 0) {
+  const cleaned = String(value ?? "").replace(/[^\d.-]/g, "");
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function defaultCetFinancials(cet, index = 0) {
+  const exposure = Math.max(1, Number(cet.exposure || 1));
+  const peakExposure = Number(cet.limits?.peakExposure ?? exposure);
+  const accountsBooked = Math.round(exposure * 72 + 800 + index * 17);
+  const accountsControlGroup = Math.round(accountsBooked * 0.22);
+  const avgCreditLimitExtended = Math.round((peakExposure * 1000000) / Math.max(accountsBooked, 1));
+  const totalCreditLimitExtended = Math.round(peakExposure * 1000000);
+  const totalIncrementalCreditLimit = Math.round(totalCreditLimitExtended * 0.28);
+  const y1Customers = Number((exposure * 0.08).toFixed(1));
+  const y2Customers = Number((exposure * 0.11).toFixed(1));
+  const y3Customers = Number((exposure * 0.13).toFixed(1));
+
+  const metricRow = (label, y1, y2, y3, assumption) => ({
+    label,
+    y1,
+    y2,
+    y3,
+    cumulative: typeof y1 === "number" && typeof y2 === "number" && typeof y3 === "number"
+      ? Number((y1 + y2 + y3).toFixed(2))
+      : "-",
+    assumption
+  });
+
+  return {
+    size: {
+      accountsBookedTested: accountsBooked,
+      accountsControlGroup,
+      peakExposure,
+      startTrackingDate: cet.startDate || "2026-01-15",
+      endBookingsDate: cet.endDate || "2026-07-15",
+      avgCreditLimitExtended,
+      totalCreditLimitExtended,
+      totalIncrementalCreditLimit
+    },
+    pnl: {
+      metrics: [
+        metricRow("# Customers (000s)", y1Customers, y2Customers, y3Customers, "Ramp-up through phased sourcing by segment."),
+        metricRow("Total lines/disbursals (USD m)", Number((exposure * 1.2).toFixed(1)), Number((exposure * 1.55).toFixed(1)), Number((exposure * 1.78).toFixed(1)), "Conversion improves after scorecard tuning."),
+        metricRow("ANR (%)", Number((2.2 + (index % 3) * 0.1).toFixed(2)), Number((2.5 + (index % 3) * 0.1).toFixed(2)), Number((2.8 + (index % 3) * 0.1).toFixed(2)), "Risk-based pricing uplift from month 4."),
+        metricRow("ENR (%)", Number((3.6 + (index % 2) * 0.12).toFixed(2)), Number((3.9 + (index % 2) * 0.12).toFixed(2)), Number((4.1 + (index % 2) * 0.12).toFixed(2)), "Improved revolve mix and fee income.")
+      ],
+      incomeCost: [
+        metricRow("Gross Interest Income", Number((exposure * 0.19).toFixed(1)), Number((exposure * 0.24).toFixed(1)), Number((exposure * 0.29).toFixed(1)), "Portfolio seasoning and stable utilization."),
+        metricRow("Cost of Funds", Number((exposure * 0.07).toFixed(1)), Number((exposure * 0.09).toFixed(1)), Number((exposure * 0.1).toFixed(1)), "Funding spread assumes current treasury curve."),
+        metricRow("Net Interest Income", Number((exposure * 0.12).toFixed(1)), Number((exposure * 0.15).toFixed(1)), Number((exposure * 0.19).toFixed(1)), "Margin expansion from better cohort mix."),
+        metricRow("Net Fees Income", Number((exposure * 0.03).toFixed(1)), Number((exposure * 0.04).toFixed(1)), Number((exposure * 0.05).toFixed(1)), "Annual fee and usage fee growth."),
+        metricRow("Revenue", Number((exposure * 0.15).toFixed(1)), Number((exposure * 0.2).toFixed(1)), Number((exposure * 0.24).toFixed(1)), "Revenue reflects net interest plus fee drivers."),
+        metricRow("Cost", Number((exposure * 0.06).toFixed(1)), Number((exposure * 0.08).toFixed(1)), Number((exposure * 0.09).toFixed(1)), "Opex includes servicing and collections.")
+      ],
+      loanImpairment: [
+        metricRow("Gross Charge-off", Number((exposure * 0.025).toFixed(2)), Number((exposure * 0.031).toFixed(2)), Number((exposure * 0.034).toFixed(2)), "Higher in new-to-bank cohorts."),
+        metricRow("ECL", Number((exposure * 0.018).toFixed(2)), Number((exposure * 0.022).toFixed(2)), Number((exposure * 0.024).toFixed(2)), "Stage migration based on historical vintage behavior."),
+        metricRow("Loan Impairment", Number((exposure * 0.02).toFixed(2)), Number((exposure * 0.024).toFixed(2)), Number((exposure * 0.026).toFixed(2)), "Overlay includes stress scenario buffer.")
+      ],
+      profit: [
+        metricRow("Loss Adjusted Returns (Revenue - LI)", Number((exposure * 0.13).toFixed(1)), Number((exposure * 0.18).toFixed(1)), Number((exposure * 0.21).toFixed(1)), "Positive from cohort quality improvement."),
+        metricRow("Operating Profit", Number((exposure * 0.09).toFixed(1)), Number((exposure * 0.12).toFixed(1)), Number((exposure * 0.14).toFixed(1)), "Efficiency gains from operating scale."),
+        metricRow("Profit After Tax", Number((exposure * 0.07).toFixed(1)), Number((exposure * 0.1).toFixed(1)), Number((exposure * 0.12).toFixed(1)), "Effective tax rate assumed stable."),
+        metricRow("Loss Coverage (LI/Revenue)", Number((13 + (index % 4) * 1.1).toFixed(1)), Number((12.2 + (index % 3) * 1).toFixed(1)), Number((11.7 + (index % 2) * 0.8).toFixed(1)), "Improves as risk calibration stabilizes."),
+        metricRow("RWA (incl OP RWA)", Number((exposure * 0.62).toFixed(1)), Number((exposure * 0.67).toFixed(1)), Number((exposure * 0.7).toFixed(1)), "RWA trend aligned with growth and risk profile."),
+        metricRow("RoTE (PAT/Equity) %", Number((10.4 + (index % 3) * 0.7).toFixed(1)), Number((11.8 + (index % 3) * 0.8).toFixed(1)), Number((12.9 + (index % 3) * 0.8).toFixed(1)), "Equity allocation based on internal capital model.")
+      ]
+    }
+  };
+}
+
+function defaultEndorsements(cet, index = 0) {
+  return {
+    oneLod: {
+      certAccepted: true,
+      certAcceptedAt: `2026-02-${String(10 + (index % 15)).padStart(2, "0")}T09:30:00Z`,
+      certAcceptedBy: cet.owner || "Country Risk Manager",
+      nameDesignation: `${cet.owner || "Country Risk Manager"}, Country Credit Head`,
+      endorsementDate: `2026-02-${String(11 + (index % 15)).padStart(2, "0")}`,
+      conditions: index % 2 === 0 ? "Weekly delinquency checkpoint during first 8 weeks." : "No additional conditions."
+    }
+  };
+}
+
+function createSectionOwnership(existing = []) {
+  const existingMap = new Map(existing.map((x) => [x.sectionId, x]));
+  return CET_FORM_CONFIG.sections.map((section) => {
+    const seed = existingMap.get(section.id) || {};
+    return {
+      sectionId: section.id,
+      ownerRole: seed.ownerRole || section.ownerRoleDefault,
+      currentEditor: seed.currentEditor || null,
+      lastEditedAt: seed.lastEditedAt || null
+    };
+  });
+}
+
+function seedCets(rawData) {
+  const countriesById = new Map(rawData.countryCads.map((x) => [x.id, x]));
+  rawData.cets = rawData.cets.map((cet, index) => {
+    if (cet.limits && cet.sectionOwnership && cet.triggers && cet.products && cet.clientSegments && cet.financials && cet.endorsements) return cet;
+    const parent = countriesById.get(cet.countryCadId) || {};
+    const parentCap = Number(parent.cap || 100);
+    const parentExposure = Number(parent.exposure || 60);
+    const baseParentUtil = clampPct(((parentExposure + Number(cet.exposure || 0)) / Math.max(1, parentCap)) * 100);
+    const segmentThresholdPct = 20;
+    const segmentUtilPct = clampPct((Number(cet.exposure || 0) / Math.max(1, Number(cet.cap || 1))) * 30 + (index % 3) * 2.5);
+    const parentThresholdPct = 85;
+    const severity = baseParentUtil > parentThresholdPct || segmentUtilPct > segmentThresholdPct ? "Blocker" : "Warning";
+    const sectionOwnership = createSectionOwnership(cet.sectionOwnership);
+    const ownerSection = sectionOwnership.find((x) => x.ownerRole === "1LOD");
+    if (ownerSection && !ownerSection.currentEditor) ownerSection.currentEditor = cet.owner || "Country Risk Manager";
+
+    return {
+      ...cet,
+      parentCountryCadId: cet.countryCadId,
+      parentGroupCadId: cet.groupCadId,
+      products: cet.products || [cet.product].filter(Boolean),
+      clientSegments: cet.clientSegments || [cet.clientSegment].filter(Boolean),
+      rationale: cet.rationale || `${cet.name} for ${cet.country} ${cet.clientSegment} to validate controlled risk expansion.`,
+      startDate: cet.startDate || "2026-01-15",
+      endDate: cet.endDate || "2026-07-15",
+      status: normalizeStatus((cet.status || "DRAFT"), "child"),
+      sectionOwnership,
+      limits: cet.limits || {
+        parentCadUtilPct: baseParentUtil,
+        parentCadThresholdPct: parentThresholdPct,
+        segmentUtilPct,
+        segmentThresholdPct,
+        peakExposure: Number(cet.exposure || 0)
+      },
+      triggers: cet.triggers || [
+        { metricCode: "FID", threshold: "4.5%", actual: `${(3.8 + index * 0.2).toFixed(1)}%`, blackLine: "6.0%" },
+        { metricCode: "Ever30", threshold: "8.0%", actual: `${(6.2 + index * 0.15).toFixed(1)}%`, blackLine: "10.0%" },
+        { metricCode: "GCO_ANR", threshold: "45%", actual: `${(38 + index * 1.2).toFixed(1)}%`, blackLine: "55%" }
+      ],
+      financials: cet.financials || defaultCetFinancials(cet, index),
+      endorsements: cet.endorsements || defaultEndorsements(cet, index),
+      issues: cet.issues || (baseParentUtil > parentThresholdPct || segmentUtilPct > segmentThresholdPct ? [
+        {
+          issueId: baseParentUtil > parentThresholdPct ? "GOV-CAD-UTIL-001" : "GOV-SEG-CONC-004",
+          severity,
+          boundaryType: baseParentUtil > parentThresholdPct ? "parentCad" : "segmentCap",
+          thresholdValue: baseParentUtil > parentThresholdPct ? parentThresholdPct : segmentThresholdPct,
+          actualValue: baseParentUtil > parentThresholdPct ? baseParentUtil : segmentUtilPct,
+          delta: Number((baseParentUtil > parentThresholdPct ? baseParentUtil - parentThresholdPct : segmentUtilPct - segmentThresholdPct).toFixed(2)),
+          linkedSectionId: "cet-risk",
+          mitigationChecklist: [
+            "Reduce CET peak exposure",
+            "Tighten segment cap",
+            "Attach 2LOD commentary for temporary override"
+          ]
+        }
+      ] : [])
+    };
+  });
+}
+
+function sectionOwnerMeta(row, sectionId) {
+  const hit = (row.sectionOwnership || []).find((x) => x.sectionId === sectionId);
+  return {
+    ownerRole: hit?.ownerRole || "1LOD",
+    currentEditor: hit?.currentEditor || null,
+    lastEditedAt: hit?.lastEditedAt || null
+  };
+}
+
+function ownerBadge(ownerRole) {
+  const cls = ownerRole === "2LOD" ? "owner-2lod" : ownerRole === "Shared" ? "owner-shared" : "owner-1lod";
+  return `<span class="owner-badge ${cls}">${ownerRole}</span>`;
+}
+
+function isReadOnlyCadStatus(status) {
+  return status === "ACTIVE" || status === "RETIRED";
+}
+
+function isReadOnlyChildStatus(status) {
+  return status === "INFLIGHT" || status === "SUCCESS" || status === "FAILED";
+}
+
+function renderDescriptions(items) {
+  const rows = [];
+  for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
+  return `<div class="descriptions-bordered">
+    ${rows.map((pair) => `<div class="desc-row">
+      <div class="desc-label">${pair[0]?.label || ""}</div><div class="desc-value">${pair[0]?.value ?? "-"}</div>
+      <div class="desc-label">${pair[1]?.label || ""}</div><div class="desc-value">${pair[1]?.value ?? "-"}</div>
+    </div>`).join("")}
+  </div>`;
+}
+
+function docTypeLabel(type) {
+  return String(type || "").toUpperCase() === "SANDBOX" ? "Sandbox" : "CET";
+}
+
+function topDetailSummary(type, row) {
+  const t = String(type || "").toLowerCase() === "sandbox" ? "sandbox" : "cet";
+  const label = docTypeLabel(type);
+  return `<div class="descriptions-bordered top-detail-grid">
+    <div class="desc-row single">
+      <div class="desc-label">Name</div>
+      <div class="desc-value">
+        <span class="doc-name-with-icon">${navIcon(t)}<span class="doc-type-ascii">[${label}]</span><strong>${row.name || "-"}</strong></span>
+      </div>
+    </div>
+    <div class="desc-row">
+      <div class="desc-label">${label} ID</div><div class="desc-value">${row.id || "-"}</div>
+      <div class="desc-label">Status</div><div class="desc-value">${statusTag(row.status)}</div>
+    </div>
+  </div>`;
+}
+
+function helperBox(text, title = "Guidance", expanded = false) {
+  return `<details class="helper-box"${expanded ? " open" : ""}>
+    <summary>${title}</summary>
+    <div class="helper-box-content">${text}</div>
+  </details>`;
+}
+
+function money(val) {
+  return Number(val || 0).toLocaleString("en-US");
+}
+
+function subsectionFold(title, ownerRole, bodyHtml, open = true) {
+  return `<details class="subsection-fold"${open ? " open" : ""}>
+    <summary><span>${title}</span>${ownerBadge(ownerRole)}</summary>
+    <div class="subsection-fold-body">${bodyHtml}</div>
+  </details>`;
+}
+
+function renderFinancialPnlTable(rows, editable = false, keyPrefix = "pnl") {
+  const toCell = (row, field, idx) => editable
+    ? `<input class="number-format" data-required="true" data-label="${row.label} ${field.toUpperCase()}" id="field-${keyPrefix}-${idx}-${field}" value="${row[field] ?? ""}" />`
+    : `${row[field] ?? "-"}`;
+  return `<table class="data-table financial-metrics uniform-metrics-table">
+    <colgroup>
+      <col class="col-metric" />
+      <col class="col-year" />
+      <col class="col-year" />
+      <col class="col-year" />
+      <col class="col-cumulative" />
+      <col class="col-assumption" />
+    </colgroup>
+    <thead><tr><th>Metric</th><th>Year 1</th><th>Year 2</th><th>Year 3</th><th>Cumulative</th><th>Key Assumptions and Rationale</th></tr></thead>
+    <tbody>
+      ${rows.map((row, idx) => `<tr>
+        <td class="metric-col">${row.label}</td>
+        <td>${toCell(row, "y1", idx)}</td>
+        <td>${toCell(row, "y2", idx)}</td>
+        <td>${toCell(row, "y3", idx)}</td>
+        <td>${toCell(row, "cumulative", idx)}</td>
+        <td>${editable ? `<textarea id="field-${keyPrefix}-${idx}-assumption" rows="2" data-required="true" data-label="${row.label} Assumption">${row.assumption || ""}</textarea>` : (row.assumption || "-")}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table>`;
+}
+
+function renderCetSizeDescription(financials, editable) {
+  const size = financials.size || {};
+  const valueOrInput = (id, label, value, options = {}) => {
+    if (!editable) return value ?? "-";
+    const type = options.type || "text";
+    const cls = options.number ? "number-format" : "";
+    return `<input id="${id}" class="${cls}" type="${type}" value="${value ?? ""}" data-required="true" data-label="${label}" />`;
+  };
+  const infoIcon = (text) => `<span class="help-inline" title="${text}">ⓘ</span>`;
+  return `<div class="descriptions-bordered responsive-descriptions cet-size-descriptions">
+    <div class="desc-row">
+      <div class="desc-label"># Accounts to be booked/tested</div>
+      <div class="desc-value">${valueOrInput("field-cet-accounts-booked", "# Accounts to be booked/tested", size.accountsBookedTested, { number: true })}</div>
+      <div class="desc-label">Peak Exposure</div>
+      <div class="desc-value">${valueOrInput("field-cet-peak-exposure", "Peak Exposure", size.peakExposure, { number: true })}</div>
+    </div>
+    <div class="desc-row">
+      <div class="desc-label"># Accounts for Control Group ${infoIcon("For portfolio management actions")}</div>
+      <div class="desc-value">${valueOrInput("field-cet-accounts-control", "# Accounts for Control group", size.accountsControlGroup, { number: true })}</div>
+      <div class="desc-label">Start Date for CET Tracking ${infoIcon("Start date for CET tracking")}</div>
+      <div class="desc-value">${valueOrInput("field-cet-track-start", "Start date for CET tracking", size.startTrackingDate, { type: "date" })}</div>
+    </div>
+    <div class="desc-row">
+      <div class="desc-label">Average credit limit extended (Exposure) ${infoIcon("Average credit limit extended (Exposure)")}</div>
+      <div class="desc-value">${valueOrInput("field-cet-avg-limit", "Average credit limit extended", size.avgCreditLimitExtended, { number: true })}</div>
+      <div class="desc-label">End Date for CET Bookings ${infoIcon("End date for CET bookings")}</div>
+      <div class="desc-value">${valueOrInput("field-cet-track-end", "End date for CET bookings", size.endBookingsDate, { type: "date" })}</div>
+    </div>
+    <div class="desc-row">
+      <div class="desc-label">Total Credit Limit Extended (Exposure)</div>
+      <div class="desc-value">${valueOrInput("field-cet-total-limit", "Total Credit Limit Extended", size.totalCreditLimitExtended, { number: true })}</div>
+      <div class="desc-label">Total Incremental Credit Limit ${infoIcon("For portfolio management actions")}</div>
+      <div class="desc-value">${valueOrInput("field-cet-total-incremental", "Total Incremental Credit Limit", size.totalIncrementalCreditLimit, { number: true })}</div>
+    </div>
+  </div>`;
+}
+
+function sectionIssueBadge(sectionId) {
+  return state.issueStore.issues.some((x) => x.sectionId === sectionId && (x.type === "Field" || x.type === "Blocker" || x.type === "Warning"));
+}
+
+function syncDraftSummaryCards() {
+  const scope = dom.viewRoot;
+  if (!scope) return;
+  const map = [
+    { key: "name", id: "field-cet-name" },
+    { key: "id", value: state.route.childId || "-" },
+    { key: "status", value: statusTag((getChildById(state.route.childId || "") || {}).status || "DRAFT"), html: true },
+    { key: "startDate", id: "field-cet-start" },
+    { key: "endDate", id: "field-cet-end" },
+    { key: "products", id: "field-cet-products" },
+    { key: "segments", id: "field-cet-segments" },
+    { key: "exposure", id: "field-cet-exposure" },
+    { key: "cap", id: "field-cet-cap" },
+    { key: "sbx-name", id: "field-sbx-name" },
+    { key: "sbx-id", value: state.route.childId || "-" },
+    { key: "sbx-status", value: statusTag((getChildById(state.route.childId || "") || {}).status || "DRAFT"), html: true },
+    { key: "sbx-limit", id: "field-sbx-limit" },
+    { key: "sbx-product", id: "field-sbx-product" },
+    { key: "sbx-segment", id: "field-sbx-segment" },
+    { key: "sbx-country", id: "field-sbx-country" },
+    { key: "group-name", id: "field-group-name" },
+    { key: "group-product", id: "field-group-product" },
+    { key: "group-segment", id: "field-group-segment" },
+    { key: "country-summary", id: "field-country-summary" },
+    { key: "interim-note", id: "field-interim-note" }
+  ];
+  map.forEach((item) => {
+    const target = scope.querySelector(`[data-summary-value="${item.key}"]`);
+    if (!target) return;
+    const value = item.id ? (document.getElementById(item.id)?.value || "-") : (item.value ?? "-");
+    if (item.html) target.innerHTML = value;
+    else target.textContent = String(value || "-");
+  });
+}
+
+function sectionCompleteStatus(sectionId) {
+  const section = document.getElementById(sectionId);
+  if (!section) return false;
+  if (section.querySelector(".descriptions-bordered")) return true;
+  const requiredFields = [...section.querySelectorAll("[data-required='true']")];
+  if (!requiredFields.length) {
+    if (section.querySelector("table.data-table")) return true;
+    const text = section.textContent?.replace(/\s+/g, " ").trim() || "";
+    return text.length > 24;
+  }
+  return requiredFields.every((field) => {
+    if (field.type === "checkbox") return field.checked;
+    return String(field.value || "").trim().length > 0;
+  });
+}
+
+function completionBadge(sectionId, hasIssue = false) {
+  const done = sectionCompleteStatus(sectionId);
+  if (hasIssue) return `<span class="completion-dot error" aria-label="Error">×</span>`;
+  return `<span class="completion-dot ${done ? "done" : "pending"}" aria-label="${done ? "Complete" : "Incomplete"}">${done ? "✓" : "○"}</span>`;
+}
+
+function formatNumberForDisplay(value) {
+  const cleaned = String(value ?? "").replace(/[^\d.-]/g, "");
+  const num = Number(cleaned);
+  if (!Number.isFinite(num)) return "";
+  return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function attachNumberFormatters() {
+  dom.viewRoot.querySelectorAll(".number-format").forEach((input) => {
+    if (input.dataset.boundFormatter === "true") return;
+    input.dataset.boundFormatter = "true";
+    input.value = formatNumberForDisplay(input.value);
+    input.addEventListener("focus", () => {
+      input.value = String(input.value || "").replace(/,/g, "");
+    });
+    input.addEventListener("blur", () => {
+      input.value = formatNumberForDisplay(input.value);
+    });
+  });
+}
+
+function enforceReadOnlyMode() {
+  if (state.route.view !== "cet" && state.route.view !== "sandbox") return;
+  const row = state.route.view === "cet"
+    ? state.data.cets.find((x) => x.id === state.route.childId)
+    : state.data.sandboxes.find((x) => x.id === state.route.childId);
+  if (!row || !isReadOnlyChildStatus(row.status)) return;
+  dom.viewRoot.querySelectorAll("input, textarea, select, button[data-create-next]").forEach((field) => {
+    if (field.id === "field-cet-ack") return;
+    field.setAttribute("disabled", "disabled");
+  });
+}
+
+function governanceIssueForRule(row, ruleId, payload) {
+  const severity = payload.severity || "Warning";
+  return {
+    id: payload.issueId || ruleId,
+    type: severity,
+    sectionId: payload.linkedSectionId || "cet-risk",
+    message: payload.message || `${ruleId} boundary breached.`,
+    hint: payload.hint || "Adjust exposure or add mitigation.",
+    details: {
+      ruleId,
+      severity,
+      boundaryType: payload.boundaryType || "policyException",
+      thresholdValue: payload.thresholdValue,
+      actualValue: payload.actualValue,
+      delta: payload.delta,
+      linkedSectionId: payload.linkedSectionId || "cet-risk",
+      mitigationChecklist: payload.mitigationChecklist || [],
+      status: "Open"
+    }
+  };
+}
+
 function optionsFor(key) {
   const rows = [
     ...state.data.groupCads,
@@ -377,8 +893,18 @@ function statusMatch(type, row) {
 }
 
 function statusTag(status) {
-  const cls = status === "Active" || status === "Draft" ? "tag-active" : status === "In Flight" ? "tag-flight" : "tag-done";
-  return `<span class="status-tag ${cls}"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${status.toUpperCase()}</span></span>`;
+  const normalized = String(status || "").toUpperCase();
+  const label = normalized === "INFLIGHT" ? "INFLIGHT" : normalized;
+  const clsMap = {
+    DRAFT: "tag-draft",
+    ACTIVE: "tag-active",
+    RETIRED: "tag-retired",
+    INFLIGHT: "tag-inflight",
+    SUCCESS: "tag-success",
+    FAILED: "tag-failed"
+  };
+  const cls = clsMap[normalized] || "tag-draft";
+  return `<span class="status-tag ${cls}"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${label}</span></span>`;
 }
 
 function ownerInitials(owner) {
@@ -758,23 +1284,21 @@ function renderLeftPanel() {
   ];
   const assignedToMeCount = allDocs.filter((x) => isAssignedToMeRow(x)).length;
   const assignedToTeamCount = allDocs.filter((x) => isAssignedToTeamRow(x)).length;
-  const myDraftCount = allDocs.filter((x) => isAssignedToMeRow(x) && inboxStatusFor(x) === "Draft").length;
-  const myFlightCount = allDocs.filter((x) => isAssignedToMeRow(x) && inboxStatusFor(x) === "In Flight").length;
-  const teamDraftCount = allDocs.filter((x) => isAssignedToTeamRow(x) && inboxStatusFor(x) === "Draft").length;
-  const teamFlightCount = allDocs.filter((x) => isAssignedToTeamRow(x) && inboxStatusFor(x) === "In Flight").length;
+  const myDraftCount = allDocs.filter((x) => isAssignedToMeRow(x) && inboxStatusFor(x) === "DRAFT").length;
+  const myFlightCount = allDocs.filter((x) => isAssignedToMeRow(x) && inboxStatusFor(x) === "INFLIGHT").length;
+  const teamDraftCount = allDocs.filter((x) => isAssignedToTeamRow(x) && inboxStatusFor(x) === "DRAFT").length;
+  const teamFlightCount = allDocs.filter((x) => isAssignedToTeamRow(x) && inboxStatusFor(x) === "INFLIGHT").length;
   const alertCount = state.data.cets.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
   const entityTitle = (type) => ({ group: "Group CADs", country: "Country CADs", cet: "CETs", sandbox: "Sandboxes" }[type] || type);
   const rowStatus = (type, status, label) => `
     <button class="side-row ${type === "inbox" ? (state.inboxStatus === status ? "on" : "") : (state.homeType === type && state.homeStatus === status ? "on" : "")}" data-home-type="${type}" data-home-status="${status}">
-      <span>${navIcon("filter")} ${label}</span>
+      <span>${label}</span>
     </button>`;
   const parentType = (type) => `
-    <button class="menu-item with-icon ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all">${navIcon("filter")} <span>${entityTitle(type)}</span></button>`;
+    <button class="menu-item ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all"><span>${entityTitle(type)}</span></button>`;
   const statusRows = (type) => `
     <div class="side-rows ${state.homeType === type ? "open" : "closed"}">
-      ${rowStatus(type, "Active", "ACTIVE")}
-      ${rowStatus(type, "In Flight", "IN FLIGHT")}
-      ${rowStatus(type, "Completed", "COMPLETED")}
+      ${statusSetForType(type).map((status) => rowStatus(type, status, status)).join("")}
     </div>`;
 
   const detailSections = (() => {
@@ -807,12 +1331,22 @@ function renderLeftPanel() {
     <div class="menu-group">
       <p class="menu-title">Sections</p>
       ${isMobile ? `<button class="menu-item mobile-toggle" data-mobile-toggle="sections">${state.mobileSectionsOpen ? "Hide Sections" : "Show Sections"}</button>` : ""}
-      ${(!isMobile || state.mobileSectionsOpen) ? detailSections.map((s) => `<a class="menu-item section-link ${state.activeSectionId === s.id ? "active" : ""}" data-section-id="${s.id}" href="#${s.id}">${s.label}</a>`).join("") : ""}
+      ${(!isMobile || state.mobileSectionsOpen)
+        ? detailSections.map((s) => {
+          const ownerRole = (r.view === "cet" && child) ? sectionOwnerMeta(child, s.id).ownerRole : null;
+          const hasIssue = sectionIssueBadge(s.id);
+          return `<div class="section-link-row">
+            <a class="menu-item section-link ${state.activeSectionId === s.id ? "active" : ""} ${hasIssue ? "has-error" : ""}" data-section-id="${s.id}" href="#${s.id}">${s.label}</a>
+            ${completionBadge(s.id, hasIssue)}
+            ${ownerRole ? ownerBadge(ownerRole) : ""}
+          </div>`;
+        }).join("")
+        : ""}
     </div>`;
 
   const pagesGroup = `
     <div class="menu-group">
-      <p class="menu-title">${navIcon("home")} Pages</p>
+      <p class="menu-title">Pages</p>
       <a class="menu-item with-icon ${r.view === "home" ? "active" : ""}" href="${PATH.home}">${navIcon("home")} <span>Credit Approvals</span></a>
       <a class="menu-item with-icon ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}">${navIcon("inbox")} <span>Inbox</span></a>
       <a class="menu-item with-icon ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}">${navIcon("portfolio")} <span>Portfolio Monitoring</span></a>
@@ -822,44 +1356,57 @@ function renderLeftPanel() {
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     ${pagesGroup}
     <div class="menu-group">
-      <p class="menu-title">${navIcon("filter")} Document Filters</p>
+      <p class="menu-title">Document Filters</p>
       <div class="side-group">${parentType("group")}${statusRows("group")}</div>
       <div class="side-group">${parentType("country")}${statusRows("country")}</div>
       <div class="side-group">${parentType("cet")}${statusRows("cet")}</div>
       <div class="side-group">${parentType("sandbox")}${statusRows("sandbox")}</div>
     </div>
     <div class="menu-group">
-      <p class="menu-title">${navIcon("filter")} Action Filters</p>
+      <p class="menu-title">Action Filters</p>
       <button class="menu-item ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
       <button class="menu-item ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
       <button class="menu-item ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts <span class="mini-badge warn">${alertCount}</span></button>
     </div>`;
 
+  const inboxDocs = inboxRows();
+  const inboxTypeMeta = [
+    { key: "GROUP", label: "Group CADs", statuses: statusSetForType("GROUP") },
+    { key: "COUNTRY", label: "Country CADs", statuses: statusSetForType("COUNTRY") },
+    { key: "CET", label: "CETs", statuses: statusSetForType("CET") },
+    { key: "SANDBOX", label: "Sandboxes", statuses: statusSetForType("SANDBOX") }
+  ];
   const inboxExpanded = `
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     ${pagesGroup}
     <div class="menu-group">
-      <p class="menu-title">${navIcon("filter")} Inbox Filters</p>
+      <p class="menu-title">Inbox Scope</p>
       <button class="menu-item ${state.inboxScope === "my" ? "active" : ""}" data-inbox-scope="my">My Inbox <span class="mini-badge">${assignedToMeCount}</span></button>
-      <div class="side-rows ${state.inboxScope === "my" ? "open" : "closed"}">
-        ${rowStatus("inbox", "Draft", `DRAFT <span class="mini-badge">${myDraftCount}</span>`)}
-        ${rowStatus("inbox", "In Flight", `IN FLIGHT <span class="mini-badge">${myFlightCount}</span>`)}
-        ${rowStatus("inbox", "Completed", "COMPLETED")}
-      </div>
       <button class="menu-item ${state.inboxScope === "team" ? "active" : ""}" data-inbox-scope="team">Team Inbox <span class="mini-badge">${assignedToTeamCount}</span></button>
-      <div class="side-rows ${state.inboxScope === "team" ? "open" : "closed"}">
-        ${rowStatus("inbox", "Draft", `DRAFT <span class="mini-badge">${teamDraftCount}</span>`)}
-        ${rowStatus("inbox", "In Flight", `IN FLIGHT <span class="mini-badge">${teamFlightCount}</span>`)}
-        ${rowStatus("inbox", "Completed", "COMPLETED")}
-      </div>
-      <p class="muted todo-hint">Team inbox is filtered by signed-in profile countries and products.</p>
+    </div>
+    <div class="menu-group">
+      <p class="menu-title">Document Filters</p>
+      ${inboxTypeMeta.map((meta) => {
+        const typeRows = inboxDocs.filter((row) => row.type === meta.key);
+        const parentOn = state.inboxType === meta.key && state.inboxStatus === "all";
+        const statusOpen = state.inboxType === meta.key;
+        return `<div class="side-group">
+          <button class="menu-item ${parentOn ? "active" : ""}" data-inbox-type="${meta.key}" data-inbox-status="all">${meta.label} <span class="mini-badge">${typeRows.length}</span></button>
+          <div class="side-rows ${statusOpen ? "open" : "closed"}">
+            ${meta.statuses.map((status) => {
+              const count = typeRows.filter((row) => inboxStatusFor(row) === status).length;
+              return `<button class="side-row ${state.inboxType === meta.key && state.inboxStatus === status ? "on" : ""}" data-inbox-type="${meta.key}" data-inbox-status="${status}"><span>${status} <span class="mini-badge">${count}</span></span></button>`;
+            }).join("")}
+          </div>
+        </div>`;
+      }).join("")}
     </div>`;
 
   const portfolioExpanded = `
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     ${pagesGroup}
     <div class="menu-group">
-      <p class="menu-title">${navIcon("filter")} Portfolio Filters</p>
+      <p class="menu-title">Portfolio Filters</p>
       <button class="menu-item with-icon ${state.portfolioType === "all" ? "active" : ""}" data-portfolio-type="all">${navIcon("all")} <span>All</span></button>
       <button class="menu-item with-icon ${state.portfolioType === "group" ? "active" : ""}" data-portfolio-type="group">${navIcon("group")} <span>Group CAD</span></button>
       <button class="menu-item with-icon ${state.portfolioType === "country" ? "active" : ""}" data-portfolio-type="country">${navIcon("country")} <span>Country CAD</span></button>
@@ -874,10 +1421,10 @@ function renderLeftPanel() {
       <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("inbox")}</a>
       <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("portfolio")}</a>
       <span class="icon-separator"></span>
-      <button class="icon-pill has-tooltip ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="Active" aria-label="Group CADs" data-tooltip="Group CADs">${navIcon("group")}</button>
-      <button class="icon-pill has-tooltip ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="Active" aria-label="Country CADs" data-tooltip="Country CADs">${navIcon("country")}</button>
-      <button class="icon-pill has-tooltip ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="Active" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>      
-      <button class="icon-pill has-tooltip ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="Active" aria-label="Sandboxes" data-tooltip="Sandboxes">${navIcon("sandbox")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="ACTIVE" aria-label="Group CADs" data-tooltip="Group CADs">${navIcon("group")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="ACTIVE" aria-label="Country CADs" data-tooltip="Country CADs">${navIcon("country")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="INFLIGHT" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>      
+      <button class="icon-pill has-tooltip ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="INFLIGHT" aria-label="Sandboxes" data-tooltip="Sandboxes">${navIcon("sandbox")}</button>
       <span class="icon-separator"></span>
       <button class="icon-pill has-tooltip ${state.quickView === "none" ? "active" : ""}" data-quick-view="none" aria-label="All Docs" data-tooltip="All Docs">${navIcon("all")}</button>
       <button class="icon-pill has-tooltip ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs" aria-label="My Docs" data-tooltip="My Docs">${navIcon("mine")}</button>
@@ -940,15 +1487,17 @@ function renderLeftPanel() {
   dom.leftPanel.querySelectorAll("[data-inbox-scope]").forEach((el) => {
     el.addEventListener("click", () => {
       state.inboxScope = el.dataset.inboxScope;
+      state.inboxType = "all";
       state.inboxStatus = "all";
       if (state.route.view !== "inbox") window.location.hash = PATH.inbox;
       else render();
     });
   });
 
-  dom.leftPanel.querySelectorAll(".side-row[data-home-type='inbox']").forEach((el) => {
+  dom.leftPanel.querySelectorAll("[data-inbox-type]").forEach((el) => {
     el.addEventListener("click", () => {
-      state.inboxStatus = el.dataset.homeStatus;
+      state.inboxType = el.dataset.inboxType;
+      state.inboxStatus = el.dataset.inboxStatus || "all";
       if (state.route.view !== "inbox") window.location.hash = PATH.inbox;
       else render();
     });
@@ -998,9 +1547,9 @@ function renderHome() {
   const allRows = [...rows.group, ...rows.country, ...rows.cet, ...rows.sandbox];
   const scopedRows = applyCommonFilters(allRows);
   const myScopeCount = scopedRows.length;
-  const inFlightCount = scopedRows.filter((x) => x.status === "In Flight").length;
+  const inFlightCount = scopedRows.filter((x) => x.status === "INFLIGHT").length;
   const governanceCount = rows.cet.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
-  const completedCount = scopedRows.filter((x) => x.status === "Completed").length;
+  const completedCount = scopedRows.filter((x) => x.status === "SUCCESS" || x.status === "RETIRED" || x.status === "FAILED").length;
   const statusText = `${state.homeType.toUpperCase()} / ${state.homeStatus.toUpperCase()}`;
 
   const selectedTableHtml = `
@@ -1039,9 +1588,9 @@ function renderHome() {
       ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
       <div class="metric-grid">
         <div class="metric"><span>My Scope Docs</span><strong>${myScopeCount}</strong></div>
-        <div class="metric"><span>In Flight</span><strong>${inFlightCount}</strong></div>
+        <div class="metric"><span>Inflight</span><strong>${inFlightCount}</strong></div>
         <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
-        <div class="metric"><span>Completed</span><strong>${completedCount}</strong></div>
+        <div class="metric"><span>Closed</span><strong>${completedCount}</strong></div>
       </div>
     </section>
     ${selectedTableHtml}
@@ -1057,9 +1606,9 @@ function renderInbox() {
     return haystack.includes(term);
   }), "inbox");
   const counts = {
-    draft: rows.filter((x) => inboxStatusFor(x) === "Draft").length,
-    inflight: rows.filter((x) => inboxStatusFor(x) === "In Flight").length,
-    completed: rows.filter((x) => inboxStatusFor(x) === "Completed").length
+    draft: rows.filter((x) => inboxStatusFor(x) === "DRAFT").length,
+    inflight: rows.filter((x) => inboxStatusFor(x) === "INFLIGHT").length,
+    closed: rows.filter((x) => ["SUCCESS", "FAILED", "RETIRED"].includes(inboxStatusFor(x))).length
   };
   const tableRows = rows.map((r) => `<tr>
     <td class="key-col">${r.name}<div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
@@ -1084,14 +1633,14 @@ function renderInbox() {
       </div>
       <div class="metric-grid">
         <div class="metric"><span>Draft</span><strong>${counts.draft}</strong></div>
-        <div class="metric"><span>In Flight</span><strong>${counts.inflight}</strong></div>
-        <div class="metric"><span>Completed</span><strong>${counts.completed}</strong></div>
+        <div class="metric"><span>Inflight</span><strong>${counts.inflight}</strong></div>
+        <div class="metric"><span>Closed</span><strong>${counts.closed}</strong></div>
         <div class="metric"><span>Total</span><strong>${rows.length}</strong></div>
       </div>
     </section>
     <section class="card">
       <div class="panel-head">
-        <h3>${state.inboxScope === "my" ? "My Inbox" : "Team Inbox"} | ${state.inboxStatus === "all" ? "ALL" : state.inboxStatus.toUpperCase()}</h3>
+        <h3>${state.inboxScope === "my" ? "My Inbox" : "Team Inbox"} | ${state.inboxType} | ${state.inboxStatus === "all" ? "ALL" : state.inboxStatus.toUpperCase()}</h3>
         ${renderColumnsToggle("inbox")}
       </div>
       <table class="data-table">
@@ -1164,13 +1713,65 @@ function renderGroupDetail() {
   const rows = sortRows(rowData, "groupDetail").map((c) =>
     `<tr><td class="key-col">${c.name}<div>${idTag(c.id)}${legalEntityTag(c)}</div></td>${cols.id ? `<td>${c.id}</td>` : ""}${cols.legalEntity ? `<td>${c.legalEntity || "-"}</td>` : ""}<td>${countryCell(c.country)}</td><td>${c.clientSegment || "-"}</td><td>${statusTag(c.status)}</td><td>${c.cetsCount}</td><td>${c.sandboxesCount}</td><td>${ownerCell(c.owner)}</td><td><a href="${PATH.country(group.id, c.country, c.id)}">Open</a></td></tr>`
   ).join("");
+  const readOnly = isReadOnlyCadStatus(group.status);
+  const groupHeader = `<div class="descriptions-bordered top-detail-grid">
+    <div class="desc-row single">
+      <div class="desc-label">Name</div>
+      <div class="desc-value"><span class="doc-name-with-icon">${navIcon("group")}<span class="doc-type-ascii">[Group CAD]</span><strong>${group.name || "-"}</strong></span></div>
+    </div>
+    <div class="desc-row">
+      <div class="desc-label">Group CAD ID</div><div class="desc-value">${group.id || "-"}</div>
+      <div class="desc-label">Status</div><div class="desc-value">${statusTag(group.status)}</div>
+    </div>
+  </div>`;
+  const groupSnapshot = `<section class="card" id="cad-overview-summary">
+      <h2>Group CAD Summary Snapshot</h2>
+      <div class="descriptions-bordered top-detail-grid">
+        <div class="desc-row single">
+          <div class="desc-label">Name</div>
+          <div class="desc-value"><span class="doc-name-with-icon">${navIcon("group")}<span class="doc-type-ascii">[Group CAD]</span><strong data-summary-value="group-name">${group.name || "-"}</strong></span></div>
+        </div>
+        <div class="desc-row">
+          <div class="desc-label">Group CAD ID</div><div class="desc-value">${group.id || "-"}</div>
+          <div class="desc-label">Status</div><div class="desc-value">${statusTag(group.status)}</div>
+        </div>
+      </div>
+      ${renderDescriptions([
+        { label: "Product", value: `<span data-summary-value="group-product">${group.product || "-"}</span>` },
+        { label: "Client Segment", value: `<span data-summary-value="group-segment">${group.clientSegment || "-"}</span>` },
+        { label: "Owner", value: group.owner },
+        { label: "Legal Entity", value: group.legalEntity || "-" }
+      ])}
+    </section>`;
+  const overviewContent = readOnly
+    ? `${groupHeader}${renderDescriptions([
+      { label: "Product", value: group.product },
+      { label: "Client Segment", value: group.clientSegment },
+      { label: "Owner", value: group.owner },
+      { label: "Legal Entity", value: group.legalEntity || "-" }
+    ])}`
+    : `<div class="form-stack">
+        <label>Group CAD Name
+          <input id="field-group-name" data-required="true" data-label="Group CAD Name" value="${group.name}" />
+        </label>
+        <label>Group CAD Summary
+          <textarea id="field-group-summary" rows="3" data-required="true" data-label="Group CAD Summary">${group.name} for ${group.country || "Global"}.</textarea>
+        </label>
+        <label>Product
+          <input id="field-group-product" value="${group.product || ""}" />
+        </label>
+        <label>Client Segment
+          <input id="field-group-segment" value="${group.clientSegment || ""}" />
+        </label>
+      </div>`;
 
   dom.viewRoot.innerHTML = `
+    ${readOnly ? `<section class="card" id="cad-overview"><h2>Group CAD Detail</h2>${overviewContent}</section>` : `${groupSnapshot}
     <section class="card" id="cad-overview">
-      <h2>Group CAD Detail</h2>
-      <p><strong>${group.id}</strong> - ${group.name}</p>
-      <p class="muted">Product ${group.product} | Segment ${group.clientSegment} | Status ${statusTag(group.status)}</p>
-    </section>
+      <h2>Group CAD Overview (Editable)</h2>
+      ${helperBox("Keep Group CAD summary focused on portfolio intent and avoid repeating country-level execution details.")}
+      ${overviewContent}
+    </section>`}
     <section class="card" id="cad-basic">
       <h3>Country CADs</h3>
       <div class="main-search-row">
@@ -1208,23 +1809,59 @@ function renderCountryDetail() {
   const cets = applyCommonFilters(state.data.cets.filter((c) => c.countryCadId === countryCad.id));
   const sandboxes = applyCommonFilters(state.data.sandboxes.filter((s) => s.countryCadId === countryCad.id));
   const successful = state.data.cets.filter((c) => c.countryCadId === countryCad.id && c.result === "Successful");
-
-  const cols = state.visibleColumns.countryDetail;
-  dom.viewRoot.innerHTML = `
-    <section class="card" id="cad-overview">
-      <h2>Country CAD Detail</h2>
-      <p><strong>${countryCad.id}</strong> - ${countryCad.name}</p>
-      <div class="form-grid">
+  const readOnly = isReadOnlyCadStatus(countryCad.status);
+  const countryHeader = `<div class="descriptions-bordered top-detail-grid">
+    <div class="desc-row single">
+      <div class="desc-label">Name</div>
+      <div class="desc-value"><span class="doc-name-with-icon">${navIcon("country")}<span class="doc-type-ascii">[Country CAD]</span><strong>${countryCad.name || "-"}</strong></span></div>
+    </div>
+    <div class="desc-row">
+      <div class="desc-label">Country CAD ID</div><div class="desc-value">${countryCad.id || "-"}</div>
+      <div class="desc-label">Status</div><div class="desc-value">${statusTag(countryCad.status)}</div>
+    </div>
+  </div>`;
+  const countrySnapshot = `<section class="card" id="cad-overview-summary">
+      <h2>Country CAD Summary Snapshot</h2>
+      ${countryHeader}
+      ${renderDescriptions([
+        { label: "Country", value: countryCad.country },
+        { label: "Product", value: countryCad.product },
+        { label: "Client Segment", value: countryCad.clientSegment },
+        { label: "Owner", value: countryCad.owner },
+        { label: "Legal Entity", value: countryCad.legalEntity || "-" },
+        { label: "Summary", value: `<span data-summary-value="country-summary">-</span>` }
+      ])}
+    </section>`;
+  const overviewContent = readOnly
+    ? `${countryHeader}${renderDescriptions([
+      { label: "Country", value: countryCad.country },
+      { label: "Product", value: countryCad.product },
+      { label: "Client Segment", value: countryCad.clientSegment },
+      { label: "Owner", value: countryCad.owner },
+      { label: "Legal Entity", value: countryCad.legalEntity || "-" }
+    ])}`
+    : `<div class="form-stack">
         <label>Country CAD Summary
           <textarea id="field-country-summary" data-required="true" data-label="Country CAD Summary" rows="3"></textarea>
         </label>
         <label>Interim Change Note
           <textarea id="field-interim-note" rows="3"></textarea>
         </label>
-      </div>
+      </div>`;
+
+  const cols = state.visibleColumns.countryDetail;
+  dom.viewRoot.innerHTML = `
+    ${readOnly ? `<section class="card" id="cad-overview"><h2>Country CAD Detail</h2>${overviewContent}
       <p class="muted">Successful CETs can be referenced as audit trail for interim changes.</p>
       <ul>${successful.map((s) => `<li>${s.id} - ${s.name}</li>`).join("") || "<li>No successful CET yet</li>"}</ul>
-    </section>
+    </section>` : `${countrySnapshot}
+    <section class="card" id="cad-overview">
+      <h2>Country CAD Overview (Editable)</h2>
+      ${helperBox("Use interim change note only for what changed versus approved baseline; keep full rationale in summary.")}
+      ${overviewContent}
+      <p class="muted">Successful CETs can be referenced as audit trail for interim changes.</p>
+      <ul>${successful.map((s) => `<li>${s.id} - ${s.name}</li>`).join("") || "<li>No successful CET yet</li>"}</ul>
+    </section>`}
     <section class="card" id="cad-basic">
       <h3>Child Tests (parallel tracks)</h3>
       <div class="main-search-row">
@@ -1268,48 +1905,265 @@ function renderCetOrSandbox() {
   }
 
   if (isSandbox) {
+    const readOnly = isReadOnlyChildStatus(row.status);
+    const sandboxSummaryCard = `<section class="card" id="sbx-overview-summary">
+      <h2>Sandbox Summary Snapshot</h2>
+      <div class="descriptions-bordered top-detail-grid">
+        <div class="desc-row single">
+          <div class="desc-label">Name</div>
+          <div class="desc-value"><span class="doc-name-with-icon">${navIcon("sandbox")}<span class="doc-type-ascii">[Sandbox]</span><strong data-summary-value="sbx-name">${row.name || "-"}</strong></span></div>
+        </div>
+        <div class="desc-row">
+          <div class="desc-label">Sandbox ID</div><div class="desc-value"><span data-summary-value="sbx-id">${row.id || "-"}</span></div>
+          <div class="desc-label">Status</div><div class="desc-value"><span data-summary-value="sbx-status">${statusTag(row.status)}</span></div>
+        </div>
+      </div>
+      ${readOnly ? renderDescriptions([
+        { label: "Country", value: row.country || "-" },
+        { label: "Product", value: row.product || "-" },
+        { label: "Client Segment", value: row.clientSegment || "-" },
+        { label: "Execution Limit", value: row.limit ?? "-" }
+      ]) : renderDescriptions([
+        { label: "Country", value: `<span data-summary-value="sbx-country">${row.country || "-"}</span>` },
+        { label: "Product", value: `<span data-summary-value="sbx-product">${row.product || "-"}</span>` },
+        { label: "Client Segment", value: `<span data-summary-value="sbx-segment">${row.clientSegment || "-"}</span>` },
+        { label: "Execution Limit", value: `<span data-summary-value="sbx-limit">${row.limit ?? "-"}</span>` }
+      ])}
+    </section>`;
+
+    const sandboxASection = `<section class="card" id="sbx-overview">
+      <h2>Sandbox A Summary (Editable)</h2>
+      ${helperBox("Describe objective, boundaries and controls clearly so reviewers can assess whether the sandbox can run safely within policy intent.")}
+      <div class="form-stack">
+        <label>Sandbox Name
+          <input id="field-sbx-name" data-required="true" data-label="Sandbox Name" value="${row.name || ""}" />
+        </label>
+        <label>Country
+          <input id="field-sbx-country" data-required="true" data-label="Country" value="${row.country || ""}" />
+        </label>
+        <label>Product
+          <input id="field-sbx-product" data-required="true" data-label="Product" value="${row.product || ""}" />
+        </label>
+        <label>Client Segment
+          <input id="field-sbx-segment" data-required="true" data-label="Client Segment" value="${row.clientSegment || ""}" />
+        </label>
+        <label>Execution Limit
+          <input id="field-sbx-limit" type="number" value="${row.limit}" data-required="true" data-label="Execution Limit" />
+        </label>
+      </div>
+    </section>`;
+
     dom.viewRoot.innerHTML = `
-      <section class="card" id="sbx-overview">
-        <h2>Sandbox Detail</h2>
-        <p><strong>${row.id}</strong> - ${row.name}</p>
-        <div class="form-grid">
-          <label>Sandbox Objective
-            <textarea id="field-sbx-objective" data-required="true" data-label="Sandbox Objective" rows="3"></textarea>
-          </label>
-          <label>Execution Limit
-            <input id="field-sbx-limit" type="number" value="${row.limit}" data-required="true" data-label="Execution Limit" />
-          </label>
+      ${readOnly ? `<section class="card" id="sbx-overview"><h2>Sandbox Detail</h2>${topDetailSummary("sandbox", row)}${renderDescriptions([
+        { label: "Country", value: row.country || "-" },
+        { label: "Product", value: row.product || "-" },
+        { label: "Client Segment", value: row.clientSegment || "-" },
+        { label: "Execution Limit", value: row.limit ?? "-" }
+      ])}</section>` : `${sandboxSummaryCard}${sandboxASection}`}
+      <section class="card" id="sbx-scope">
+        <h3>Scope</h3>
+        ${helperBox("What geographies, products, and cohorts are in-scope, and which are explicitly excluded?")}
+        <div class="ant-form-vertical form-stack">
+          ${readOnly ? renderDescriptions([
+            { label: "Countries", value: row.country || "-" },
+            { label: "Duration", value: "12 weeks" }
+          ]) : `<label>Scope Narrative
+              <textarea id="field-sbx-scope" data-required="true" data-label="Sandbox Scope" rows="3" placeholder="Describe countries, segments, and policy scope for sandbox test."></textarea>
+            </label>`}
         </div>
       </section>
-      <section class="card" id="sbx-scope"><h3>Scope</h3><p class="muted">Sandbox scope and constraints.</p></section>
-      <section class="card" id="sbx-guardrails"><h3>Guardrails</h3><p class="muted">Risk and control guardrails.</p></section>
-      <section class="card" id="sbx-evidence"><h3>Evidence</h3><p class="muted">Evidence and outcomes.</p></section>`;
-  } else {
-    dom.viewRoot.innerHTML = `
-      <section class="card" id="cet-overview">
-        <h2>CET Detail</h2>
-        <p><strong>${row.id}</strong> - ${row.name}</p>
-        <div class="form-grid">
-          <label>CET Rationale
-            <textarea id="field-cet-rationale" data-required="true" data-label="CET Rationale" rows="3"></textarea>
-          </label>
-          <label>CET Exposure
-            <input id="field-cet-exposure" type="number" value="${row.exposure}" data-required="true" data-label="CET Exposure" />
-          </label>
-          <label>CET Cap
-            <input id="field-cet-cap" type="number" value="${row.cap}" data-required="true" data-label="CET Cap" />
-          </label>
-          <label class="checkbox-row">
-            <input id="field-cet-ack" type="checkbox" />
-            Governance warning acknowledged
-          </label>
+      <section class="card" id="sbx-guardrails">
+        <h3>Guardrails</h3>
+        ${helperBox("Define stop-loss, segment caps, trigger thresholds, and escalation checkpoints before launch.")}
+        <div class="ant-form-vertical form-stack">
+          ${readOnly ? renderDescriptions([
+            { label: "Exposure Cap", value: row.cap ?? row.limit ?? "-" },
+            { label: "Trigger", value: "Ever30 <= 8%" },
+            { label: "Collections Readiness", value: "Confirmed" },
+            { label: "Monitoring", value: "Weekly" }
+          ]) : `<label>Guardrails
+              <textarea id="field-sbx-guardrails-note" data-required="true" data-label="Sandbox Guardrails" rows="3" placeholder="Define stop-loss, segment caps, and trigger boundaries."></textarea>
+            </label>`}
         </div>
       </section>
-      <section class="card" id="cet-parameters"><h3>Parameters</h3><p class="muted">Test parameters and assumptions.</p></section>
-      <section class="card" id="cet-triggers"><h3>Triggers & Caps</h3><p class="muted">Trigger and cap settings.</p></section>
-      <section class="card" id="cet-risk"><h3>Risk / Exceptions</h3><p class="muted">Risks and deviations.</p></section>
-      <section class="card" id="cet-approvals"><h3>Approvals</h3><p class="muted">Approver and sign-off details.</p></section>`;
+      <section class="card" id="sbx-evidence">
+        <h3>Evidence</h3>
+        ${helperBox("Capture observed outcomes, variance against plan, and recommendation to scale, pause, or stop.")}
+        <div class="ant-form-vertical form-stack">
+          ${readOnly ? renderDescriptions([
+            { label: "Outcome", value: row.status === "SUCCESS" ? "Pilot succeeded" : row.status === "FAILED" ? "Pilot failed" : "In progress" },
+            { label: "Recommendation", value: row.status === "SUCCESS" ? "Scale with control limits" : "Recalibrate and rerun" }
+          ]) : `<label>Evidence / Outcome Notes
+              <textarea id="field-sbx-evidence" data-required="true" data-label="Sandbox Evidence" rows="3" placeholder="Attach observed outcomes, variances, and recommendation."></textarea>
+            </label>`}
+        </div>
+      </section>`;
+    return;
   }
+
+  const readOnly = isReadOnlyChildStatus(row.status);
+  const financials = row.financials || defaultCetFinancials(row, 0);
+  const oneLod = row.endorsements?.oneLod || defaultEndorsements(row, 0).oneLod;
+  const sectionCard = (sectionId, bodyHtml) => {
+    const owner = sectionOwnerMeta(row, sectionId);
+    return `<section class="card" id="${sectionId}">
+      <div class="panel-head">
+        <h3>${CET_SECTIONS.find((x) => x.id === sectionId)?.label || sectionId}</h3>
+        <div class="section-meta">
+          ${ownerBadge(owner.ownerRole)}
+          <span class="editor-pill">${owner.currentEditor ? `Editing: ${owner.currentEditor}` : "No active editor"}</span>
+        </div>
+      </div>
+      <div class="ant-form-vertical">${bodyHtml}</div>
+    </section>`;
+  };
+  const ruleRows = (row.triggers || []).map((trigger) => `<tr>
+    <td>${trigger.metricCode}</td>
+    <td>${trigger.threshold}</td>
+    <td>${trigger.actual}</td>
+    <td>${trigger.blackLine || "-"}</td>
+  </tr>`).join("");
+
+  const cetSnapshotCard = `<section class="card" id="cet-overview-summary">
+    <h2>CET Summary Snapshot</h2>
+    <div class="descriptions-bordered top-detail-grid">
+      <div class="desc-row single">
+        <div class="desc-label">Name</div>
+        <div class="desc-value"><span class="doc-name-with-icon">${navIcon("cet")}<span class="doc-type-ascii">[CET]</span><strong data-summary-value="name">${row.name || "-"}</strong></span></div>
+      </div>
+      <div class="desc-row">
+        <div class="desc-label">CET ID</div><div class="desc-value"><span data-summary-value="id">${row.id || "-"}</span></div>
+        <div class="desc-label">Status</div><div class="desc-value"><span data-summary-value="status">${statusTag(row.status)}</span></div>
+      </div>
+    </div>
+    ${readOnly ? renderDescriptions([
+      { label: "Start Date", value: row.startDate || "-" },
+      { label: "End Date", value: row.endDate || "-" },
+      { label: "Client Segments", value: (row.clientSegments || []).join(", ") || "-" },
+      { label: "Products", value: (row.products || []).join(", ") || "-" },
+      { label: "CET Exposure", value: money(row.exposure) },
+      { label: "CET Cap", value: money(row.cap) }
+    ]) : renderDescriptions([
+      { label: "Start Date", value: `<span data-summary-value="startDate">${row.startDate || "-"}</span>` },
+      { label: "End Date", value: `<span data-summary-value="endDate">${row.endDate || "-"}</span>` },
+      { label: "Client Segments", value: `<span data-summary-value="segments">${(row.clientSegments || []).join(", ") || "-"}</span>` },
+      { label: "Products", value: `<span data-summary-value="products">${(row.products || []).join(", ") || "-"}</span>` },
+      { label: "CET Exposure", value: `<span data-summary-value="exposure">${row.exposure ?? "-"}</span>` },
+      { label: "CET Cap", value: `<span data-summary-value="cap">${row.cap ?? "-"}</span>` }
+    ])}
+  </section>`;
+
+  const summaryEditableCard = sectionCard("cet-overview", `${helperBox("Use this section to define test scope and boundaries. Keep details specific to avoid repetition in later sections.")}<div class="form-stack">
+      <label>CET Name
+        <input id="field-cet-name" data-required="true" data-label="CET Name" value="${row.name || ""}" />
+      </label>
+      <label>CET Rationale
+        <textarea id="field-cet-rationale" data-required="true" data-label="CET Rationale" rows="3">${row.rationale || ""}</textarea>
+      </label>
+      <label>Products
+        <input id="field-cet-products" data-required="true" data-label="Products" value="${(row.products || []).join(", ")}" />
+      </label>
+      <label>Client Segments
+        <input id="field-cet-segments" data-required="true" data-label="Client Segments" value="${(row.clientSegments || []).join(", ")}" />
+      </label>
+      <label>Start Date
+        <input id="field-cet-start" type="date" data-required="true" data-label="Start Date" value="${row.startDate || ""}" />
+      </label>
+      <label>End Date
+        <input id="field-cet-end" type="date" data-required="true" data-label="End Date" value="${row.endDate || ""}" />
+      </label>
+      <label>CET Exposure
+        <input id="field-cet-exposure" type="number" value="${row.exposure}" data-required="true" data-label="CET Exposure" />
+      </label>
+      <label>CET Cap
+        <input id="field-cet-cap" type="number" value="${row.cap}" data-required="true" data-label="CET Cap" />
+      </label>
+      <label class="checkbox-row">
+        <input id="field-cet-ack" type="checkbox" />
+        Governance warning acknowledged
+      </label>
+    </div>`);
+
+  dom.viewRoot.innerHTML = `
+    ${readOnly ? `<section class="card" id="cet-overview"><h2>CET Detail</h2>${topDetailSummary("cet", row)}${renderDescriptions([
+      { label: "Start Date", value: row.startDate || "-" },
+      { label: "End Date", value: row.endDate || "-" },
+      { label: "Client Segments", value: (row.clientSegments || []).join(", ") || "-" },
+      { label: "Products", value: (row.products || []).join(", ") || "-" },
+      { label: "CET Exposure", value: money(row.exposure) },
+      { label: "CET Cap", value: money(row.cap) }
+    ])}</section>` : `${cetSnapshotCard}${summaryEditableCard}`}
+    ${sectionCard("cet-objective", `${helperBox("Expected outcomes: identify performance uplift, key levers and risk controls.")}<label>Objective Narrative
+      <textarea id="field-cet-objective" data-required="true" data-label="Objective Narrative" rows="3">${row.objective || ""}</textarea>
+    </label>`)}
+    ${sectionCard("cet-testing", `${helperBox("State the exact policy/control changes being tested and why now.")}<label>Testing Criteria
+      <textarea id="field-cet-testing" data-required="true" data-label="Testing Criteria" rows="3">${row.testingCriteria || ""}</textarea>
+    </label>`)}
+    ${sectionCard("cet-portfolio", `${helperBox("Summarize current segment performance, expected uplift and assumptions not captured in existing metrics.")}<label>Portfolio Analysis
+      <textarea id="field-cet-portfolio" data-required="true" data-label="Portfolio Analysis" rows="3">${row.portfolioAnalysis || ""}</textarea>
+    </label>`)}
+    ${sectionCard("cet-financial", `
+      ${helperBox("Assumptions for each metric should be clearly called out. Specify whether cost basis is full or marginal.")}
+      ${subsectionFold("CET Size", "1LOD", renderCetSizeDescription(financials, !readOnly), true)}
+      ${subsectionFold("Profit and Loss", "1LOD", `
+        ${subsectionFold("Overview", "1LOD", renderFinancialPnlTable(financials.pnl.metrics || [], !readOnly, "pnl-metrics"), true)}
+        ${subsectionFold("Income and Cost", "1LOD", renderFinancialPnlTable(financials.pnl.incomeCost || [], !readOnly, "pnl-income"), false)}
+        ${subsectionFold("Loan Impairment", "2LOD", renderFinancialPnlTable(financials.pnl.loanImpairment || [], !readOnly, "pnl-li"), false)}
+        ${subsectionFold("Profit", "1LOD", renderFinancialPnlTable(financials.pnl.profit || [], !readOnly, "pnl-profit"), false)}
+      `, true)}
+    `)}
+    ${sectionCard("cet-customer-impact", `${helperBox("Discuss customer complaints, attrition and customer experience impacts.")}<label>Customer Impact
+      <textarea id="field-cet-customer-impact" data-required="true" data-label="Customer Impact" rows="3">${row.customerImpact || ""}</textarea>
+    </label>`)}
+    ${sectionCard("cet-risk", `${helperBox("If trigger breaches occur in two consecutive months, raise an action plan and escalate for approval.")}<div class="guardrail-grid">
+      <div class="guardrail-row ${Number(row.limits?.parentCadUtilPct || 0) > Number(row.limits?.parentCadThresholdPct || 0) ? "blocker" : ""}">
+        <strong>Parent Country CAD Utilization</strong>
+        <p class="muted">${formatPct(row.limits?.parentCadUtilPct)} / ${formatPct(row.limits?.parentCadThresholdPct)}</p>
+      </div>
+      <div class="guardrail-row ${Number(row.limits?.segmentUtilPct || 0) > Number(row.limits?.segmentThresholdPct || 0) ? "warn" : ""}">
+        <strong>Segment Sub-limit</strong>
+        <p class="muted">${formatPct(row.limits?.segmentUtilPct)} / ${formatPct(row.limits?.segmentThresholdPct)}</p>
+      </div>
+    </div>
+    <table class="data-table uniform-metrics-table trigger-table">
+      <colgroup>
+        <col class="col-metric" />
+        <col class="col-year" />
+        <col class="col-year" />
+        <col class="col-cumulative" />
+      </colgroup>
+      <thead><tr><th>Trigger</th><th>Threshold</th><th>Actual</th><th>Black Line</th></tr></thead>
+      <tbody>${ruleRows}</tbody>
+    </table>`)}
+    ${sectionCard("cet-exceptions", `${helperBox("Detail any deviations to Group Policy/Standards with rationale and mitigants.")}<label>Exceptions & Mitigants
+      <textarea id="field-cet-exceptions" data-required="true" data-label="Exceptions & Mitigants" rows="3">${row.exceptions || ""}</textarea>
+    </label>`)}
+    ${sectionCard("cet-commentary", `${helperBox("Independent WRB 2LOD commentary with supporting challenge evidence where needed.")}<label>WRB Credit Risk Commentary
+      <textarea id="field-cet-commentary" data-required="true" data-label="WRB Commentary" rows="3">${row.wrbCommentary || ""}</textarea>
+    </label>`)}
+    ${sectionCard("cet-other-risks", `${helperBox("Confirm principal risk types are assessed (including CRRAM for elevated risks).")}<label>Other Principal Risks
+      <textarea id="field-cet-other-risks" data-required="true" data-label="Other Principal Risks" rows="3">${row.otherRisks || ""}</textarea>
+    </label>`)}
+    ${sectionCard("cet-approvals-1lod", `${helperBox("In endorsing this CET for 1LOD proposal, the endorser certifies risk appetite and principal risk assessments are complete.")}${readOnly
+      ? `${renderDescriptions([
+        { label: "E-Acknowledged By", value: oneLod.certAcceptedBy || "-" },
+        { label: "E-Acknowledged At", value: oneLod.certAcceptedAt || "-" },
+        { label: "Name and Designation", value: oneLod.nameDesignation || "-" },
+        { label: "Date of Endorsement for Proposal", value: oneLod.endorsementDate || "-" }
+      ])}<table class="data-table"><thead><tr><th>1LOD Proposal</th><th>Name and Designation</th><th>Date of Endorsement for Proposal</th><th>Endorsement Conditions (if any)</th></tr></thead><tbody><tr><td>Endorsed for 1LOD Proposal by</td><td>${oneLod.nameDesignation || "-"}</td><td>${oneLod.endorsementDate || "-"}</td><td>${oneLod.conditions || "-"}</td></tr></tbody></table>`
+      : `<label class="checkbox-row"><input id="field-cet-k-eack" type="checkbox" data-required="true" data-label="K e-Acknowledgement" ${oneLod.certAccepted ? "checked" : ""} /> I e-acknowledge the 1LOD certification statements.</label>
+      <label>Name and Designation
+        <input id="field-cet-k-name" data-required="true" data-label="1LOD Name and Designation" value="${oneLod.nameDesignation || ""}" />
+      </label>
+      <label>Date of Endorsement for Proposal
+        <input id="field-cet-k-date" type="date" data-required="true" data-label="1LOD Endorsement Date" value="${oneLod.endorsementDate || ""}" />
+      </label>
+      <label>Endorsement Conditions (if any)
+        <textarea id="field-cet-k-conditions" rows="3">${oneLod.conditions || ""}</textarea>
+      </label>`}`)}
+    ${sectionCard("cet-approvals-2lod", `${helperBox("First approval is by relevant CCO. Additional approvals may be required based on delegated authority.")}<label>2LOD Approval Conditions
+      <textarea id="field-cet-2lod" data-required="true" data-label="2LOD Approval Conditions" rows="3">${row.twoLodApproval || ""}</textarea>
+    </label>`)}`;
 }
 
 function setBreadcrumb() {
@@ -1343,8 +2197,23 @@ function setBreadcrumb() {
 function recomputeIssues() {
   const inputs = [...dom.viewRoot.querySelectorAll("input, textarea")];
   const issues = [];
+  const routeEntity = state.route.view === "group"
+    ? state.data.groupCads.find((x) => x.id === state.route.groupCadId)
+    : state.route.view === "country"
+      ? state.data.countryCads.find((x) => x.id === state.route.countryCadId)
+      : state.route.view === "cet"
+        ? state.data.cets.find((x) => x.id === state.route.childId)
+        : state.route.view === "sandbox"
+          ? state.data.sandboxes.find((x) => x.id === state.route.childId)
+          : null;
+  const readOnlyRoute = (state.route.view === "group" || state.route.view === "country")
+    ? isReadOnlyCadStatus(routeEntity?.status)
+    : (state.route.view === "cet" || state.route.view === "sandbox")
+      ? isReadOnlyChildStatus(routeEntity?.status)
+      : false;
 
-  inputs.forEach((el) => {
+  if (!readOnlyRoute) {
+    inputs.forEach((el) => {
     if (el.dataset.required === "true") {
       const value = el.type === "checkbox" ? el.checked : String(el.value || "").trim();
       if (!value) {
@@ -1358,22 +2227,63 @@ function recomputeIssues() {
         });
       }
     }
-  });
+    });
+  }
 
   if (state.route.view === "cet") {
-    const exposure = Number(document.getElementById("field-cet-exposure")?.value || 0);
-    const cap = Math.max(1, Number(document.getElementById("field-cet-cap")?.value || 1));
+    const row = state.data.cets.find((c) => c.id === state.route.childId);
+    const exposure = Number(document.getElementById("field-cet-exposure")?.value || row?.exposure || 0);
+    const cap = Math.max(1, Number(document.getElementById("field-cet-cap")?.value || row?.cap || 1));
     const ack = document.getElementById("field-cet-ack")?.checked;
+    const parentThreshold = Number(row?.limits?.parentCadThresholdPct || 85);
+    const segmentThreshold = Number(row?.limits?.segmentThresholdPct || 20);
+    const parentUtil = Number(row?.limits?.parentCadUtilPct || 0);
+    const segmentUtil = Number(row?.limits?.segmentUtilPct || 0);
 
     if (exposure > cap) {
-      issues.push({
-        id: "GOV-AGG-CAP-001",
-        type: "Blocker",
-        sectionId: "cet-overview",
+      issues.push(governanceIssueForRule(row, "GOV-AGG-CAP-001", {
+        issueId: "GOV-AGG-CAP-001",
+        severity: "Blocker",
+        boundaryType: "policyException",
+        thresholdValue: cap,
+        actualValue: exposure,
+        delta: Number((exposure - cap).toFixed(2)),
+        linkedSectionId: "cet-overview",
         message: "CET exposure exceeds cap.",
-        hint: `Current ${exposure}, allowed ${cap}, reduce by ${exposure - cap}.`
-      });
-    } else if ((exposure / cap) * 100 >= 80 && !ack) {
+        hint: `Current ${exposure}, allowed ${cap}, reduce by ${Number(exposure - cap).toFixed(2)}.`,
+        mitigationChecklist: ["Reduce CET exposure", "Revise cap and rationale", "Attach 2LOD note"]
+      }));
+    }
+
+    if (parentUtil > parentThreshold) {
+      issues.push(governanceIssueForRule(row, "GOV-CAD-UTIL-001", {
+        issueId: "GOV-CAD-UTIL-001",
+        severity: "Blocker",
+        boundaryType: "parentCad",
+        thresholdValue: parentThreshold,
+        actualValue: parentUtil,
+        delta: Number((parentUtil - parentThreshold).toFixed(2)),
+        linkedSectionId: "cet-risk",
+        message: "Parent country CAD utilization threshold breached.",
+        hint: `Actual ${formatPct(parentUtil)} vs threshold ${formatPct(parentThreshold)}.`,
+        mitigationChecklist: ["Reduce CET peak exposure", "Open parent CAD review", "Attach temporary 2LOD override"]
+      }));
+    }
+    if (segmentUtil > segmentThreshold) {
+      issues.push(governanceIssueForRule(row, "GOV-SEG-CONC-004", {
+        issueId: "GOV-SEG-CONC-004",
+        severity: "Warning",
+        boundaryType: "segmentCap",
+        thresholdValue: segmentThreshold,
+        actualValue: segmentUtil,
+        delta: Number((segmentUtil - segmentThreshold).toFixed(2)),
+        linkedSectionId: "cet-risk",
+        message: "Product/segment sub-limit exceeded.",
+        hint: `Actual ${formatPct(segmentUtil)} vs threshold ${formatPct(segmentThreshold)}.`,
+        mitigationChecklist: ["Tighten segment cap", "Refine target cohort", "Monitor weekly delinquency trend"]
+      }));
+    }
+    if ((exposure / cap) * 100 >= 80 && !ack) {
       issues.push({
         id: "GOV-WARN-ACK-010",
         type: "Warning",
@@ -1383,22 +2293,36 @@ function recomputeIssues() {
         hint: "Tick governance warning acknowledgement."
       });
     }
+    (row?.issues || []).forEach((payload) => {
+      issues.push(governanceIssueForRule(row, payload.issueId, {
+        ...payload,
+        message: payload.boundaryType === "delinquency" ? "Delinquency indicator close to limit." : undefined,
+        hint: payload.boundaryType === "delinquency" ? "Review trigger assumptions." : undefined
+      }));
+    });
   }
 
-  issues.sort((a, b) => ({ Blocker: 0, Field: 1, Warning: 2 }[a.type] - ({ Blocker: 0, Field: 1, Warning: 2 }[b.type])));
+  const seen = new Set();
+  const compact = issues.filter((item) => {
+    const key = `${item.id}::${item.sectionId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  compact.sort((a, b) => ({ Blocker: 0, Field: 1, Warning: 2 }[a.type] - ({ Blocker: 0, Field: 1, Warning: 2 }[b.type])));
   const summary = {
-    blockers: issues.filter((x) => x.type === "Blocker").length,
-    errors: issues.filter((x) => x.type === "Field").length,
-    warnings: issues.filter((x) => x.type === "Warning").length,
-    total: issues.length
+    blockers: compact.filter((x) => x.type === "Blocker").length,
+    errors: compact.filter((x) => x.type === "Field").length,
+    warnings: compact.filter((x) => x.type === "Warning").length,
+    total: compact.length
   };
 
   const prev = state.previousIssueCount;
-  state.issueStore = { issues, summary };
+  state.issueStore = { issues: compact, summary };
   state.previousIssueCount = summary.total;
 
   if (summary.total > 0) {
-    state.rightPanel.isOpen = true;
+    if (!state.rightPanel.autoHiddenBySection) state.rightPanel.isOpen = true;
     state.rightPanel.resolvedBannerUntil = 0;
   } else if (prev > 0) {
     state.rightPanel.isOpen = true;
@@ -1412,28 +2336,58 @@ function recomputeIssues() {
   }
 }
 
+function manageRightPanelForActiveSection() {
+  const heavySections = new Set(["cet-financial", "cet-risk"]);
+  const onHeavy = state.route.view === "cet" && heavySections.has(state.activeSectionId);
+  const hasIssues = state.issueStore.summary.total > 0;
+  if (onHeavy && hasIssues) {
+    state.rightPanel.autoHiddenBySection = true;
+    state.rightPanel.isOpen = false;
+    return;
+  }
+  if (!onHeavy && state.rightPanel.autoHiddenBySection) {
+    state.rightPanel.autoHiddenBySection = false;
+    if (hasIssues) state.rightPanel.isOpen = true;
+  }
+}
+
 function renderIssuePanel() {
   const { blockers, errors, warnings, total } = state.issueStore.summary;
   dom.issueSummary.textContent = `Blockers ${blockers} | Errors ${errors} | Warnings ${warnings}`;
   dom.submitBtn.disabled = total > 0;
+  const activeCet = state.route.view === "cet" ? state.data.cets.find((x) => x.id === state.route.childId) : null;
 
   const filtered = state.rightPanel.activeFilter === "all"
     ? state.issueStore.issues
     : state.issueStore.issues.filter((x) => (state.rightPanel.activeFilter === "errors" ? x.type === "Field" : x.type.toLowerCase() === state.rightPanel.activeFilter.slice(0, -1)));
 
-  dom.issueList.innerHTML = filtered.map((x) => `
+  const guardrailCard = activeCet ? `<li class="issue-item">
+      <strong>Country CAD Utilization</strong>
+      <span class="muted">${formatPct(activeCet.limits?.parentCadUtilPct)} / ${formatPct(activeCet.limits?.parentCadThresholdPct)}</span>
+      <strong>Segment Sub-limit</strong>
+      <span class="muted">${formatPct(activeCet.limits?.segmentUtilPct)} / ${formatPct(activeCet.limits?.segmentThresholdPct)}</span>
+    </li>` : "";
+  dom.issueList.innerHTML = `${guardrailCard}${filtered.map((x) => `
     <li class="issue-item">
       <div class="issue-top"><span class="badge ${x.type.toLowerCase()}">${x.type}</span><small>${x.sectionId}</small></div>
       <strong>${x.message}</strong>
       <span class="muted">Hint: ${x.hint}</span>
-      <div class="issue-actions"><button class="jump-btn" data-issue-id="${x.id}">Go to field/rule</button></div>
+      <div class="issue-actions">
+        <button class="jump-btn" data-issue-id="${x.id}">Go to field/rule</button>
+        ${x.details ? `<button class="jump-btn" data-view-rule="${x.id}">View rule detail</button>` : ""}
+      </div>
     </li>
-  `).join("");
+  `).join("")}`;
 
   dom.filterButtons.forEach((b) => b.classList.toggle("active", b.dataset.filter === state.rightPanel.activeFilter));
 
   const show = state.rightPanel.isOpen && (total > 0 || Date.now() < state.rightPanel.resolvedBannerUntil);
   dom.issuePanel.classList.toggle("open", show);
+  if (dom.openPanelBtn) {
+    const detailRoute = state.route.view === "group" || state.route.view === "country" || state.route.view === "cet" || state.route.view === "sandbox";
+    const showReopen = detailRoute && !show && total > 0;
+    dom.openPanelBtn.classList.toggle("show", showReopen);
+  }
   dom.resolvedBanner.classList.toggle("show", total === 0 && Date.now() < state.rightPanel.resolvedBannerUntil);
 
   const small = window.matchMedia("(max-width: 1199px)").matches;
@@ -1456,6 +2410,222 @@ function jumpToIssue(id) {
   }
 }
 
+function openGovernanceModal(issueId) {
+  state.governanceModal.open = true;
+  state.governanceModal.issueId = issueId;
+  renderGovernanceModal();
+}
+
+function closeGovernanceModal() {
+  state.governanceModal.open = false;
+  state.governanceModal.issueId = "";
+  renderGovernanceModal();
+}
+
+function renderGovernanceModal() {
+  if (!dom.governanceModal) return;
+  const issue = state.issueStore.issues.find((x) => x.id === state.governanceModal.issueId);
+  if (!state.governanceModal.open || !issue?.details) {
+    dom.governanceModal.classList.remove("open");
+    dom.governanceModal.setAttribute("aria-hidden", "true");
+    dom.governanceModal.innerHTML = "";
+    return;
+  }
+  const details = issue.details;
+  const row = state.data.cets.find((c) => c.id === state.route.childId);
+  dom.governanceModal.classList.add("open");
+  dom.governanceModal.setAttribute("aria-hidden", "false");
+  dom.governanceModal.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Governance rule breach detail">
+      <div class="panel-head">
+        <h3>Governance Rule Breach</h3>
+        <button class="icon-btn" data-modal-close="1" aria-label="Close">x</button>
+      </div>
+      <div class="modal-grid">
+        <div><strong>Rule ID</strong><p>${details.ruleId}</p></div>
+        <div><strong>Severity</strong><p>${details.severity}</p></div>
+        <div><strong>Boundary Type</strong><p>${details.boundaryType}</p></div>
+        <div><strong>Status</strong><p>${details.status || "Open"}</p></div>
+        <div><strong>Parent Country CAD</strong><p>${row?.parentCountryCadId || row?.countryCadId || "-"}</p></div>
+        <div><strong>Driver CET</strong><p>${row?.id || "-"}</p></div>
+        <div><strong>Threshold</strong><p>${details.thresholdValue ?? "-"}</p></div>
+        <div><strong>Actual</strong><p>${details.actualValue ?? "-"}</p></div>
+        <div><strong>Delta</strong><p>${details.delta ?? "-"}</p></div>
+        <div class="full"><strong>Mitigation Required</strong><ul>${(details.mitigationChecklist || []).map((item) => `<li>${item}</li>`).join("") || "<li>No mitigation checklist</li>"}</ul></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn secondary" data-modal-open-parent="1">Open Parent CAD</button>
+        <button class="btn secondary" data-modal-jump="${details.linkedSectionId}">Go to Section</button>
+        <button class="btn primary" data-modal-close="1">Close</button>
+      </div>
+    </div>`;
+}
+
+function openCreateCetDrawer() {
+  state.createDrawer.open = true;
+  state.createDrawer.step = 1;
+  state.createDrawer.errors = [];
+  state.createDrawer.draft = {
+    parentCountryCadId: "",
+    products: [],
+    clientSegments: [],
+    name: "",
+    rationale: "",
+    startDate: "",
+    endDate: ""
+  };
+  state.governanceModal.open = false;
+  dom.floatMenu?.classList.remove("open");
+  renderCreateCetDrawer();
+}
+
+function closeCreateCetDrawer() {
+  state.createDrawer.open = false;
+  state.createDrawer.errors = [];
+  renderCreateCetDrawer();
+}
+
+function pickValues(name) {
+  return [...(dom.createCetDrawer?.querySelectorAll(`input[name="${name}"]:checked`) || [])].map((x) => x.value);
+}
+
+function validateCreateStepOne() {
+  const draft = state.createDrawer.draft;
+  const errors = [];
+  if (!draft.parentCountryCadId) errors.push("Parent Country CAD is required.");
+  if (!draft.products.length) errors.push("At least one Product is required.");
+  if (!draft.clientSegments.length) errors.push("At least one Client Segment is required.");
+  if (!String(draft.name || "").trim()) errors.push("CET Name is required.");
+  if (!String(draft.rationale || "").trim()) errors.push("Rationale is required.");
+  if (!draft.startDate) errors.push("Start Date is required.");
+  if (!draft.endDate) errors.push("End Date is required.");
+  state.createDrawer.errors = errors;
+  return errors.length === 0;
+}
+
+function createCetFromDraft() {
+  const draft = state.createDrawer.draft;
+  const countryCad = getCountryCadById(draft.parentCountryCadId);
+  if (!countryCad) return;
+  const count = state.data.cets.filter((x) => x.countryCadId === countryCad.id).length + 200;
+  const iso = countryMeta(countryCad.country).iso3.slice(0, 2);
+  const newId = `CET-${iso}-${count}`;
+  const newRow = {
+    id: newId,
+    countryCadId: countryCad.id,
+    parentCountryCadId: countryCad.id,
+    groupCadId: countryCad.groupCadId,
+    parentGroupCadId: countryCad.groupCadId,
+    country: countryCad.country,
+    name: draft.name.trim(),
+    product: draft.products[0],
+    products: draft.products,
+    clientSegment: draft.clientSegments[0],
+    clientSegments: draft.clientSegments,
+    cluster: countryCad.cluster,
+    owner: state.data.userProfile?.name || "CET Owner",
+    status: "DRAFT",
+    createdByCurrentUser: true,
+    exposure: 0,
+    cap: Math.max(1, Math.round(Number(countryCad.cap || 80) * 0.2)),
+    result: "Pending",
+    legalEntity: countryCad.legalEntity,
+    usageHistory: [0, 0, 0, 0, 0, 0],
+    rationale: draft.rationale.trim(),
+    startDate: draft.startDate,
+    endDate: draft.endDate,
+    sectionOwnership: createSectionOwnership([{
+      sectionId: "cet-overview",
+      ownerRole: "1LOD",
+      currentEditor: state.data.userProfile?.name || "Creator",
+      lastEditedAt: new Date().toISOString()
+    }]),
+    limits: {
+      parentCadUtilPct: clampPct(((Number(countryCad.exposure || 0)) / Math.max(1, Number(countryCad.cap || 1))) * 100),
+      parentCadThresholdPct: 85,
+      segmentUtilPct: 0,
+      segmentThresholdPct: 20,
+      peakExposure: 0
+    },
+    triggers: [
+      { metricCode: "FID", threshold: "4.5%", actual: "0.0%", blackLine: "6.0%" },
+      { metricCode: "Ever30", threshold: "8.0%", actual: "0.0%", blackLine: "10.0%" }
+    ],
+    financials: defaultCetFinancials({ ...draft, exposure: 0, limits: { peakExposure: 0 } }, state.data.cets.length),
+    endorsements: defaultEndorsements({ ...draft, owner: state.data.userProfile?.name || "CET Owner" }, state.data.cets.length),
+    issues: []
+  };
+  state.data.cets.unshift(newRow);
+  state.homeType = "cet";
+  state.homeStatus = "all";
+  state.quickView = "mydocs";
+  closeCreateCetDrawer();
+  window.location.hash = PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, newId);
+}
+
+function renderCreateCetDrawer() {
+  if (!dom.createCetDrawer) return;
+  const open = state.createDrawer.open;
+  dom.createCetDrawer.classList.toggle("open", open);
+  dom.createCetDrawer.setAttribute("aria-hidden", open ? "false" : "true");
+  dom.backdrop.classList.toggle("show", open || (state.rightPanel.isOpen && window.matchMedia("(max-width: 1199px)").matches));
+  if (!open) {
+    dom.createCetDrawer.innerHTML = "";
+    return;
+  }
+  const draft = state.createDrawer.draft;
+  const countryOptions = state.data.countryCads.map((cad) => `<option value="${cad.id}" ${draft.parentCountryCadId === cad.id ? "selected" : ""}>${cad.country} - ${cad.name} (${cad.id})</option>`).join("");
+  const products = uniqueValues(state.data.countryCads, "product");
+  const segments = uniqueValues(state.data.countryCads, "clientSegment");
+  const checked = (arr, value) => arr.includes(value) ? "checked" : "";
+  const selectedCountry = draft.parentCountryCadId ? getCountryCadById(draft.parentCountryCadId) : null;
+
+  dom.createCetDrawer.innerHTML = `
+    <div class="drawer-head">
+      <div>
+        <h2>Create New CET</h2>
+        <p class="muted">Step ${state.createDrawer.step} of 2: Context setup</p>
+      </div>
+      <button class="icon-btn" data-drawer-close="1" aria-label="Close">x</button>
+    </div>
+    <div class="drawer-form">
+      <label>Parent Country CAD *
+        <select id="create-parent-country">
+          <option value="">Select Country CAD</option>
+          ${countryOptions}
+        </select>
+      </label>
+      <label>Product(s) *</label>
+      <div class="checkbox-grid">
+        ${products.map((product) => `<label><input type="checkbox" name="create-products" value="${product}" ${checked(draft.products, product)} /> ${product}</label>`).join("")}
+      </div>
+      <label>Client Segment(s) *</label>
+      <div class="checkbox-grid">
+        ${segments.map((segment) => `<label><input type="checkbox" name="create-segments" value="${segment}" ${checked(draft.clientSegments, segment)} /> ${segment}</label>`).join("")}
+      </div>
+      <label>CET Name *
+        <input id="create-cet-name" value="${draft.name || ""}" />
+      </label>
+      <label>Rationale *
+        <textarea id="create-cet-rationale" rows="3">${draft.rationale || ""}</textarea>
+      </label>
+      <div class="form-grid">
+        <label>Proposed Start Date *
+          <input id="create-start-date" type="date" value="${draft.startDate || ""}" />
+        </label>
+        <label>Proposed End Date *
+          <input id="create-end-date" type="date" value="${draft.endDate || ""}" />
+        </label>
+      </div>
+      ${selectedCountry ? `<p class="muted">Parent trace: ${selectedCountry.groupCadId} > ${selectedCountry.id}</p>` : ""}
+      ${state.createDrawer.errors.length ? `<div class="warning-note">${state.createDrawer.errors.join("<br/>")}</div>` : ""}
+    </div>
+    <div class="drawer-footer">
+      <button class="btn secondary" data-drawer-close="1">Cancel</button>
+      <button class="btn primary" data-create-next="1">Next: Form</button>
+    </div>`;
+}
+
 function render() {
   state.route = parseRoute();
   const compactDevice = window.matchMedia("(max-width: 1024px)").matches;
@@ -1464,6 +2634,10 @@ function render() {
   if (state.route.view === "country") state.homeType = "country";
   if (state.route.view === "cet") state.homeType = "cet";
   if (state.route.view === "sandbox") state.homeType = "sandbox";
+  if (state.homeStatus !== "all") {
+    const allowed = statusSetForType(state.homeType);
+    if (allowed.length && !allowed.includes(state.homeStatus)) state.homeStatus = allowed[0];
+  }
   if (state.route.view === "portfolio") state.homeStatus = "all";
   if (routeChanged) {
     state.mobileSectionsOpen = false;
@@ -1477,7 +2651,6 @@ function render() {
   }
   dom.appShell?.classList.toggle("left-collapsed", dom.leftPanel.classList.contains("collapsed"));
   setBreadcrumb();
-  renderLeftPanel();
 
   if (state.route.view === "home") renderHome();
   else if (state.route.view === "inbox") renderInbox();
@@ -1485,8 +2658,8 @@ function render() {
   else if (state.route.view === "group") renderGroupDetail();
   else if (state.route.view === "country") renderCountryDetail();
   else renderCetOrSandbox();
-
-  setupSectionSpy();
+  attachNumberFormatters();
+  enforceReadOnlyMode();
 
   const detailRoute = state.route.view === "group" || state.route.view === "country" || state.route.view === "cet" || state.route.view === "sandbox";
   const showActions = detailRoute;
@@ -1497,17 +2670,29 @@ function render() {
   dom.backTopFab?.classList.toggle("show", detailRoute && window.scrollY > 260);
 
   recomputeIssues();
+  manageRightPanelForActiveSection();
   renderIssuePanel();
+  renderLeftPanel();
+  setupSectionSpy();
+  syncDraftSummaryCards();
+  renderCreateCetDrawer();
+  renderGovernanceModal();
   state.lastRouteView = state.route.view;
 
   dom.viewRoot.querySelectorAll("input, textarea").forEach((el) => {
     el.addEventListener("input", () => {
       recomputeIssues();
       renderIssuePanel();
+      renderLeftPanel();
+      setupSectionSpy();
+      syncDraftSummaryCards();
     });
     el.addEventListener("blur", () => {
       recomputeIssues();
       renderIssuePanel();
+      renderLeftPanel();
+      setupSectionSpy();
+      syncDraftSummaryCards();
     });
   });
 }
@@ -1530,7 +2715,7 @@ function setupSectionSpy() {
 
   const targets = ids.map((id) => document.getElementById(id)).filter(Boolean);
   if (!targets.length) return;
-  if (!state.activeSectionId) state.activeSectionId = ids[0];
+  if (!state.activeSectionId || !ids.includes(state.activeSectionId)) state.activeSectionId = ids[0];
 
   state.sectionObserver = new IntersectionObserver((entries) => {
     const visible = entries
@@ -1538,6 +2723,8 @@ function setupSectionSpy() {
       .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
     if (!visible) return;
     state.activeSectionId = visible.target.id;
+    manageRightPanelForActiveSection();
+    renderIssuePanel();
     dom.leftPanel.querySelectorAll(".section-link").forEach((el) => {
       el.classList.toggle("active", el.dataset.sectionId === state.activeSectionId);
     });
@@ -1553,6 +2740,7 @@ function initEvents() {
 
   dom.validateBtn.addEventListener("click", () => {
     recomputeIssues();
+    state.rightPanel.autoHiddenBySection = false;
     state.rightPanel.isOpen = true;
     renderIssuePanel();
   });
@@ -1560,7 +2748,13 @@ function initEvents() {
     state.rightPanel.isOpen = false;
     renderIssuePanel();
   });
+  dom.openPanelBtn?.addEventListener("click", () => {
+    state.rightPanel.autoHiddenBySection = false;
+    state.rightPanel.isOpen = true;
+    renderIssuePanel();
+  });
   dom.backdrop.addEventListener("click", () => {
+    if (state.createDrawer.open) closeCreateCetDrawer();
     state.rightPanel.isOpen = false;
     renderIssuePanel();
   });
@@ -1574,8 +2768,12 @@ function initEvents() {
 
   dom.issueList.addEventListener("click", (event) => {
     const btn = event.target.closest("button[data-issue-id]");
-    if (!btn) return;
-    jumpToIssue(btn.dataset.issueId);
+    if (btn) {
+      jumpToIssue(btn.dataset.issueId);
+      return;
+    }
+    const detailBtn = event.target.closest("button[data-view-rule]");
+    if (detailBtn) openGovernanceModal(detailBtn.dataset.viewRule);
   });
 
   dom.viewRoot.addEventListener("click", (event) => {
@@ -1726,7 +2924,56 @@ function initEvents() {
     const btn = event.target.closest("[data-create-type]");
     if (!btn) return;
     dom.floatMenu.classList.remove("open");
+    if (btn.dataset.createType === "cet") {
+      openCreateCetDrawer();
+      return;
+    }
     window.alert(`Create ${btn.dataset.createType.toUpperCase()} flow placeholder.`);
+  });
+
+  dom.createCetDrawer?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (target.id === "create-parent-country") state.createDrawer.draft.parentCountryCadId = target.value;
+    if (target.id === "create-cet-name") state.createDrawer.draft.name = target.value;
+    if (target.id === "create-cet-rationale") state.createDrawer.draft.rationale = target.value;
+    if (target.id === "create-start-date") state.createDrawer.draft.startDate = target.value;
+    if (target.id === "create-end-date") state.createDrawer.draft.endDate = target.value;
+    if (target.name === "create-products") state.createDrawer.draft.products = pickValues("create-products");
+    if (target.name === "create-segments") state.createDrawer.draft.clientSegments = pickValues("create-segments");
+  });
+
+  dom.createCetDrawer?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-drawer-close]")) {
+      closeCreateCetDrawer();
+      return;
+    }
+    if (event.target.closest("[data-create-next]")) {
+      if (!validateCreateStepOne()) {
+        renderCreateCetDrawer();
+        return;
+      }
+      createCetFromDraft();
+    }
+  });
+
+  dom.governanceModal?.addEventListener("click", (event) => {
+    if (event.target === dom.governanceModal || event.target.closest("[data-modal-close]")) {
+      closeGovernanceModal();
+      return;
+    }
+    const jumpBtn = event.target.closest("[data-modal-jump]");
+    if (jumpBtn) {
+      closeGovernanceModal();
+      const sectionId = jumpBtn.dataset.modalJump;
+      const target = document.getElementById(sectionId);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    if (event.target.closest("[data-modal-open-parent]")) {
+      const row = state.data.cets.find((c) => c.id === state.route.childId);
+      if (!row) return;
+      window.location.hash = PATH.country(row.groupCadId, row.country, row.countryCadId);
+    }
   });
 
   dom.helpFab?.addEventListener("click", () => {
@@ -1760,9 +3007,9 @@ function initEvents() {
 }
 
 async function init() {
-  state.data = SAMPLE_DATA;
+  state.data = structuredClone(SAMPLE_DATA);
   if (window.location.protocol === "file:") {
-    state.data = FALLBACK_DATA;
+    state.data = structuredClone(FALLBACK_DATA);
     state.loadWarning = "Running from local file mode with embedded sample data.";
   } else {
     try {
@@ -1770,10 +3017,12 @@ async function init() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       state.data = await res.json();
     } catch (_err) {
-      state.data = FALLBACK_DATA;
+      state.data = structuredClone(FALLBACK_DATA);
       state.loadWarning = "Using embedded fallback sample data because external JSON could not be loaded.";
     }
   }
+  normalizeAllStatuses(state.data);
+  seedCets(state.data);
   populateFilters();
   if (!window.location.hash) window.location.hash = PATH.home;
   initEvents();

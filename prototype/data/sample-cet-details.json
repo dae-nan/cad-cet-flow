@@ -1,0 +1,103 @@
+{
+  "cets": [
+    {
+      "id": "CET-IN-201",
+      "parentCountryCadId": "C-CAD-IN-01",
+      "parentGroupCadId": "G-CAD-1001",
+      "products": ["SME Loans"],
+      "clientSegments": ["SME"],
+      "rationale": "Tune early-warning triggers for NTB SME cohorts.",
+      "startDate": "2026-01-15",
+      "endDate": "2026-07-15",
+      "limits": { "parentCadUtilPct": 87.4, "parentCadThresholdPct": 85, "segmentUtilPct": 26.0, "segmentThresholdPct": 20, "peakExposure": 62.0 }
+    },
+    {
+      "id": "CET-IN-202",
+      "parentCountryCadId": "C-CAD-IN-01",
+      "parentGroupCadId": "G-CAD-1001",
+      "products": ["SME Loans"],
+      "clientSegments": ["SME"],
+      "rationale": "Pilot collections-first strategy before widening sourcing.",
+      "startDate": "2026-02-01",
+      "endDate": "2026-06-30",
+      "limits": { "parentCadUtilPct": 81.2, "parentCadThresholdPct": 85, "segmentUtilPct": 18.2, "segmentThresholdPct": 20, "peakExposure": 15.0 }
+    },
+    {
+      "id": "CET-BD-301",
+      "parentCountryCadId": "C-CAD-BD-02",
+      "parentGroupCadId": "G-CAD-1001",
+      "products": ["SME Loans"],
+      "clientSegments": ["SME"],
+      "rationale": "Expand SME cohort to repeat borrowers with improved payment consistency.",
+      "startDate": "2025-08-01",
+      "endDate": "2026-01-31",
+      "limits": { "parentCadUtilPct": 74.1, "parentCadThresholdPct": 85, "segmentUtilPct": 14.5, "segmentThresholdPct": 20, "peakExposure": 40.0 }
+    },
+    {
+      "id": "CET-PK-302",
+      "parentCountryCadId": "C-CAD-PK-03",
+      "parentGroupCadId": "G-CAD-1001",
+      "products": ["SME Loans"],
+      "clientSegments": ["SME"],
+      "rationale": "Validate early warning trigger sensitivity for stressed subsectors.",
+      "startDate": "2026-01-10",
+      "endDate": "2026-08-31",
+      "limits": { "parentCadUtilPct": 83.6, "parentCadThresholdPct": 85, "segmentUtilPct": 20.8, "segmentThresholdPct": 20, "peakExposure": 34.0 }
+    },
+    {
+      "id": "CET-AE-401",
+      "parentCountryCadId": "C-CAD-AE-04",
+      "parentGroupCadId": "G-CAD-1002",
+      "products": ["Credit Cards"],
+      "clientSegments": ["Retail"],
+      "rationale": "Test revised line assignment to reduce early delinquency while preserving approvals.",
+      "startDate": "2026-01-05",
+      "endDate": "2026-09-30",
+      "limits": { "parentCadUtilPct": 81.8, "parentCadThresholdPct": 85, "segmentUtilPct": 18.6, "segmentThresholdPct": 20, "peakExposure": 55.0 }
+    },
+    {
+      "id": "CET-HK-402",
+      "parentCountryCadId": "C-CAD-HK-05",
+      "parentGroupCadId": "G-CAD-1002",
+      "products": ["Credit Cards"],
+      "clientSegments": ["Mass Affluent", "Wealth"],
+      "rationale": "Validate repricing elasticity for affluent revolving balances.",
+      "startDate": "2025-09-01",
+      "endDate": "2026-02-15",
+      "limits": { "parentCadUtilPct": 73.2, "parentCadThresholdPct": 85, "segmentUtilPct": 14.1, "segmentThresholdPct": 20, "peakExposure": 30.0 }
+    },
+    {
+      "id": "CET-KE-501",
+      "parentCountryCadId": "C-CAD-KE-06",
+      "parentGroupCadId": "G-CAD-1003",
+      "products": ["Personal Loans"],
+      "clientSegments": ["Retail", "SME"],
+      "rationale": "Assess revised scorecard cutoffs while preserving origination quality.",
+      "startDate": "2026-02-20",
+      "endDate": "2026-10-31",
+      "limits": { "parentCadUtilPct": 86.3, "parentCadThresholdPct": 85, "segmentUtilPct": 22.1, "segmentThresholdPct": 20, "peakExposure": 44.0 }
+    },
+    {
+      "id": "CET-LK-601",
+      "parentCountryCadId": "C-CAD-LK-08",
+      "parentGroupCadId": "G-CAD-1005",
+      "products": ["Business Loans"],
+      "clientSegments": ["Business Banking", "SME"],
+      "rationale": "Test tighter trigger governance for working capital concentration pockets.",
+      "startDate": "2026-01-18",
+      "endDate": "2026-08-15",
+      "limits": { "parentCadUtilPct": 79.9, "parentCadThresholdPct": 85, "segmentUtilPct": 19.7, "segmentThresholdPct": 20, "peakExposure": 38.0 }
+    },
+    {
+      "id": "CET-AE-409",
+      "parentCountryCadId": "C-CAD-AE-09",
+      "parentGroupCadId": "G-CAD-1002",
+      "products": ["Credit Cards"],
+      "clientSegments": ["Retail", "SME"],
+      "rationale": "Recalibrate mainland line assignment with tighter concentration monitoring.",
+      "startDate": "2026-02-10",
+      "endDate": "2026-11-30",
+      "limits": { "parentCadUtilPct": 84.6, "parentCadThresholdPct": 85, "segmentUtilPct": 21.3, "segmentThresholdPct": 20, "peakExposure": 51.0 }
+    }
+  ]
+}

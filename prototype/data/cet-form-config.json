@@ -1,0 +1,39 @@
+{
+  "cetFormConfig": {
+    "version": "1.0",
+    "sections": [
+      { "id": "cet-overview", "label": "A Summary", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-objective", "label": "B Objective", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-testing", "label": "C Testing Criteria", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-portfolio", "label": "D Portfolio Analysis", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-financial", "label": "E Financial Projection", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-customer-impact", "label": "F Customer Impact", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-risk", "label": "G Credit Risk Assessment", "enabled": true, "ownerRoleDefault": "2LOD" },
+      { "id": "cet-exceptions", "label": "H Exceptions", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-commentary", "label": "I WRB Commentary", "enabled": true, "ownerRoleDefault": "2LOD" },
+      { "id": "cet-other-risks", "label": "J Other Risks", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-approvals-1lod", "label": "K 1LOD Proposal", "enabled": true, "ownerRoleDefault": "1LOD" },
+      { "id": "cet-approvals-2lod", "label": "L 2LOD Approval", "enabled": true, "ownerRoleDefault": "2LOD" }
+    ],
+    "fields": [
+      { "id": "name", "type": "string", "required": true, "sectionId": "cet-overview" },
+      { "id": "rationale", "type": "text", "required": true, "sectionId": "cet-overview" },
+      { "id": "products", "type": "string[]", "required": true, "sectionId": "cet-overview" },
+      { "id": "clientSegments", "type": "string[]", "required": true, "sectionId": "cet-overview" },
+      { "id": "startDate", "type": "date", "required": true, "sectionId": "cet-overview" },
+      { "id": "endDate", "type": "date", "required": true, "sectionId": "cet-overview" },
+      { "id": "peakExposure", "type": "number", "required": true, "sectionId": "cet-financial" },
+      { "id": "parentCadUtilPct", "type": "number", "required": true, "sectionId": "cet-risk" },
+      { "id": "parentCadThresholdPct", "type": "number", "required": true, "sectionId": "cet-risk" },
+      { "id": "segmentUtilPct", "type": "number", "required": true, "sectionId": "cet-risk" },
+      { "id": "segmentThresholdPct", "type": "number", "required": true, "sectionId": "cet-risk" }
+    ],
+    "guardrails": {
+      "mode": "dual-limit",
+      "rules": [
+        { "ruleId": "GOV-CAD-UTIL-001", "boundaryType": "parentCad", "thresholdPct": 85, "severity": "blocker" },
+        { "ruleId": "GOV-SEG-CONC-004", "boundaryType": "segmentCap", "thresholdPct": 20, "severity": "warning" }
+      ]
+    }
+  }
+}
