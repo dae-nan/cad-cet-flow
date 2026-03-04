@@ -1,2 +1,7 @@
 .DS_Store
 figma/figma-token.txt
+.playwright*
+cad/
+cet/
+governance/
+new-design/
