@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenSpec Documentation</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f9fc;
+      --panel: #ffffff;
+      --text: #122032;
+      --muted: #526173;
+      --line: #dbe3ee;
+      --link: #0b5ed7;
+      --chip: #eaf1ff;
+    }
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top right, #edf4ff, var(--bg) 40%);
+      color: var(--text);
+    }
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    h1, h2 {
+      margin: 0 0 8px;
+    }
+    p {
+      color: var(--muted);
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px;
+      margin-top: 16px;
+    }
+    ul {
+      margin: 10px 0 0;
+      padding-left: 18px;
+    }
+    li {
+      margin: 8px 0;
+    }
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .chip {
+      display: inline-block;
+      margin-right: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--chip);
+      border: 1px solid #d0ddf8;
+      color: #23457e;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>OpenSpec Documentation</h1>
+    <p>Mirror view for prototype teams. Canonical source remains under <code>openspec/changes</code>.</p>
+
+    <section class="panel">
+      <h2>Change</h2>
+      <ul>
+        <li><a href="changes/codify-prototype-flow-and-evidence/proposal.md">Proposal</a></li>
+        <li><a href="changes/codify-prototype-flow-and-evidence/design.md">Design</a></li>
+        <li><a href="changes/codify-prototype-flow-and-evidence/tasks.md">Tasks</a></li>
+        <li><a href="changes/codify-prototype-flow-and-evidence/evidence-manifest.md">Evidence Manifest</a></li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Capabilities (Feature Labels)</h2>
+      <ul>
+        <li><span class="chip">Feature</span><a href="changes/codify-prototype-flow-and-evidence/specs/workspace-navigation-context/spec.md">Workspace Navigation Context</a></li>
+        <li><span class="chip">Feature</span><a href="changes/codify-prototype-flow-and-evidence/specs/portfolio-monitoring-hierarchy/spec.md">Portfolio Monitoring Hierarchy</a></li>
+        <li><span class="chip">Feature</span><a href="changes/codify-prototype-flow-and-evidence/specs/cet-governance-validation/spec.md">CET Governance Validation</a></li>
+        <li><span class="chip">Feature</span><a href="changes/codify-prototype-flow-and-evidence/specs/cet-creation-evidence-traceability/spec.md">CET Creation Evidence Traceability</a></li>
+        <li><span class="chip">Feature</span><a href="changes/codify-prototype-flow-and-evidence/specs/documentation-entrypoint/spec.md">Documentation Entrypoint</a></li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Canonical Path (Repository Relative)</h2>
+      <p><code>openspec/changes/codify-prototype-flow-and-evidence/</code></p>
+    </section>
+  </main>
+</body>
+</html>

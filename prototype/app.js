@@ -2985,8 +2985,13 @@ function initEvents() {
   dom.helpMenu?.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-help-type]");
     if (!btn) return;
+    if (btn.dataset.helpType === "docs") {
+      window.open("documents/openspec/index.html", "_blank", "noopener,noreferrer");
+      dom.helpMenu.classList.remove("open");
+      state.openHelpMenu = false;
+      return;
+    }
     const messages = {
-      docs: "Documentation center placeholder.",
       approver: "Find your approver flow placeholder.",
       demo: "Demo mode placeholder.",
       chat: "Contact Credit chat placeholder."
