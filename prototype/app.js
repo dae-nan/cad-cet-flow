@@ -9,9 +9,9 @@ const SAMPLE_DATA = window.SAMPLE_HIERARCHY_DATA || {
 const FALLBACK_DATA = SAMPLE_DATA;
 const CAD_SECTIONS = [
   { id: "cad-overview", label: "Overview" },
-  { id: "cad-basic", label: "Basic Details" },
   { id: "cad-summary", label: "Summary" },
   { id: "cad-strategy", label: "Strategy" },
+  { id: "cad-basic", label: "Country CADs" },
   { id: "cad-portfolio", label: "Portfolio Details" },
   { id: "cad-kac", label: "Key Acceptance Criteria" },
   { id: "cad-appendix", label: "Appendix" },
@@ -85,22 +85,22 @@ const state = {
   inboxType: "all",
   inboxStatus: "all",
   sorters: {
-    home: [],
-    inbox: [],
-    portfolio: [
-      { key: "type", dir: "asc" },
-      { key: "country", dir: "asc" },
-      { key: "clientSegment", dir: "asc" },
-      { key: "product", dir: "asc" },
-      { key: "name", dir: "asc" }
-    ],
-    groupDetail: [],
-    countryDetail: []
+    home: [{ key: "name", dir: "asc" }],
+    inbox: [{ key: "name", dir: "asc" }],
+    portfolio: [{ key: "name", dir: "asc" }],
+    groupDetail: [{ key: "name", dir: "asc" }],
+    countryDetail: [{ key: "name", dir: "asc" }]
+  },
+  tablePage: {
+    home: 1,
+    inbox: 1,
+    groupDetail: 1,
+    countryDetail: 1
   },
   visibleColumns: {
     home: { legalEntity: false, id: false },
     inbox: { legalEntity: false, id: false },
-    portfolio: { legalEntity: false, id: false, owner: false, type: false },
+    portfolio: { legalEntity: false, id: false, rm: false, businessProposer: false, approver: false, type: false },
     groupDetail: { legalEntity: false, id: false },
     countryDetail: { legalEntity: false, id: false }
   },
@@ -129,6 +129,7 @@ const state = {
     open: false,
     step: 1,
     errors: [],
+    warnings: [],
     draft: {
       parentCountryCadId: "",
       products: [],
@@ -143,10 +144,19 @@ const state = {
     open: false,
     issueId: ""
   },
-  previousIssueCount: 0
+  previousIssueCount: 0,
+  actor: {
+    role: "RM",
+    name: "Country RM",
+    region: "SG",
+    country: "Singapore",
+    product: "Credit Cards",
+    clientSegment: "Retail"
+  }
 };
 
 const dom = {
+  topbar: document.querySelector(".topbar"),
   breadcrumb: document.getElementById("breadcrumb"),
   leftPanel: document.getElementById("left-panel"),
   viewRoot: document.getElementById("view-root"),
@@ -172,6 +182,13 @@ const dom = {
   governanceModal: document.getElementById("governance-modal")
 };
 
+const TABLE_PAGE_SIZE = {
+  home: 6,
+  inbox: 6,
+  groupDetail: 6,
+  countryDetail: 6
+};
+
 const PATH = {
   home: "#/home",
   inbox: "#/inbox",
@@ -181,6 +198,24 @@ const PATH = {
     `#/cad/${groupCadId}/${encodeURIComponent(country.toLowerCase())}/${countryCadId}`,
   detail: (groupCadId, country, countryCadId, childId) =>
     `#/cad/${groupCadId}/${encodeURIComponent(country.toLowerCase())}/${countryCadId}/${childId}`
+};
+
+const ACTOR_ROLES = {
+  RM: "RM",
+  BUSINESS_PROPOSER: "BUSINESS_PROPOSER",
+  APPROVER_2LOD: "APPROVER_2LOD",
+  GOVERNANCE_ADMIN: "GOVERNANCE_ADMIN"
+};
+
+const WORKFLOW_STAGES = {
+  DRAFT_RM: "DRAFT_RM",
+  DRAFT_BUSINESS_PROPOSER: "DRAFT_BUSINESS_PROPOSER",
+  SUBMITTED_2LOD: "SUBMITTED_2LOD",
+  DECISION_ACCEPTED: "DECISION_ACCEPTED",
+  DECISION_ACCEPTED_CAVEATS: "DECISION_ACCEPTED_CAVEATS",
+  DECISION_REJECTED: "DECISION_REJECTED",
+  RETURNED_REWORK_RM: "RETURNED_REWORK_RM",
+  RETURNED_REWORK_BUSINESS_PROPOSER: "RETURNED_REWORK_BUSINESS_PROPOSER"
 };
 
 function uniqueValues(rows, key) {
@@ -233,6 +268,85 @@ function normalizeAllStatuses(data) {
   if (data.sandboxes[4]) data.sandboxes[4].status = "FAILED";
 }
 
+function workflowStageLabel(stage) {
+  const map = {
+    [WORKFLOW_STAGES.DRAFT_RM]: "Draft - RM Working",
+    [WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER]: "Draft - Business Proposer Review",
+    [WORKFLOW_STAGES.SUBMITTED_2LOD]: "Submitted to 2nd Line",
+    [WORKFLOW_STAGES.DECISION_ACCEPTED]: "2nd Line Decision - Accepted",
+    [WORKFLOW_STAGES.DECISION_ACCEPTED_CAVEATS]: "2nd Line Decision - Accepted with Caveats",
+    [WORKFLOW_STAGES.DECISION_REJECTED]: "2nd Line Decision - Rejected",
+    [WORKFLOW_STAGES.RETURNED_REWORK_RM]: "Returned for Rework - RM",
+    [WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER]: "Returned for Rework - Business Proposer"
+  };
+  return map[stage] || "Draft - RM Working";
+}
+
+function actorRoleLabel(role) {
+  const map = {
+    [ACTOR_ROLES.RM]: "1st Line RM",
+    [ACTOR_ROLES.BUSINESS_PROPOSER]: "Business Proposer",
+    [ACTOR_ROLES.APPROVER_2LOD]: "Approver",
+    [ACTOR_ROLES.GOVERNANCE_ADMIN]: "Governance Admin"
+  };
+  return map[role] || role;
+}
+
+function stageFromStatus(status) {
+  if (status === "INFLIGHT") return WORKFLOW_STAGES.SUBMITTED_2LOD;
+  if (status === "SUCCESS") return WORKFLOW_STAGES.DECISION_ACCEPTED;
+  if (status === "FAILED") return WORKFLOW_STAGES.DECISION_REJECTED;
+  return WORKFLOW_STAGES.DRAFT_RM;
+}
+
+function defaultParticipants(row) {
+  const rm = row.rm || row.owner || "Country RM";
+  const bp = row.businessProposer || `Business Proposer - ${row.country || "Region"}`;
+  const approver = row.approver || row.secondLineApprover || "Approver CCO";
+  return {
+    rm,
+    businessProposer: bp,
+    approver: approver,
+    governanceAdmin: "Governance Ops"
+  };
+}
+
+function ensureWorkflowRow(row) {
+  const existingParticipants = row.participants || {};
+  const participants = {
+    ...defaultParticipants(row),
+    ...existingParticipants,
+    approver: existingParticipants.approver || existingParticipants.secondLineApprover || defaultParticipants(row).approver
+  };
+  delete participants.secondLineApprover;
+  const workflow = row.workflow || {
+    stage: stageFromStatus(row.status),
+    lastDecision: "",
+    sectionComments: {},
+    endCommentary: ""
+  };
+  return {
+    ...row,
+    participants,
+    workflow
+  };
+}
+
+function ensureWorkflowData(data) {
+  data.groupCads = data.groupCads.map((row) => ensureWorkflowRow(row));
+  data.countryCads = data.countryCads.map((row) => ensureWorkflowRow(row));
+  data.cets = data.cets.map((row) => ensureWorkflowRow(row));
+  data.sandboxes = data.sandboxes.map((row) => ensureWorkflowRow(row));
+}
+
+function currentActorNameForRole(role, row) {
+  const p = row?.participants || defaultParticipants(row || {});
+  if (role === ACTOR_ROLES.RM) return p.rm;
+  if (role === ACTOR_ROLES.BUSINESS_PROPOSER) return p.businessProposer;
+  if (role === ACTOR_ROLES.APPROVER_2LOD) return p.approver;
+  return p.governanceAdmin;
+}
+
 function applyCommonFilters(rows, opts = {}) {
   const term = state.searchTerm.trim().toLowerCase();
   const productFilters = filterValues("product");
@@ -254,7 +368,8 @@ function applyCommonFilters(rows, opts = {}) {
     if (countryFilters.length && !countryFilters.includes(row.country)) return false;
     if (opts.ignoreSearch || !term) return true;
 
-    const haystack = [row.id, row.name, row.country, row.owner, row.product, row.clientSegment]
+    const participants = row.participants || {};
+    const haystack = [row.id, row.name, row.country, row.owner, participants.rm, participants.businessProposer, participants.approver, row.product, row.clientSegment]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
@@ -345,7 +460,8 @@ function getHomepageSearchSuggestions() {
     .map((bucket) => {
       const rows = bucket.rows
         .filter((row) => {
-          const haystack = [row.id, row.name, row.owner, row.country, row.product, row.clientSegment]
+          const participants = row.participants || {};
+          const haystack = [row.id, row.name, row.owner, participants.rm, participants.businessProposer, participants.approver, row.country, row.product, row.clientSegment]
             .filter(Boolean)
             .join(" ")
             .toLowerCase();
@@ -604,16 +720,43 @@ function seedCets(rawData) {
 
 function sectionOwnerMeta(row, sectionId) {
   const hit = (row.sectionOwnership || []).find((x) => x.sectionId === sectionId);
+  const explicit = sectionActorRole(sectionId);
   return {
-    ownerRole: hit?.ownerRole || "1LOD",
+    ownerRole: explicit || hit?.ownerRole || "RM",
     currentEditor: hit?.currentEditor || null,
     lastEditedAt: hit?.lastEditedAt || null
   };
 }
 
+function sectionActorRole(sectionId) {
+  if (sectionId === "cet-approvals-2lod") return "2LOD";
+  if (sectionId === "cet-approvals-1lod") return "BUSINESS_PROPOSER";
+  if (sectionId === "cet-commentary") return "2LOD";
+  if (sectionId.startsWith("cet-")) return "RM";
+  if (sectionId.startsWith("sbx-")) return "RM";
+  return "RM";
+}
+
+function canEditSection(row, sectionId) {
+  const stage = row?.workflow?.stage;
+  const sectionRole = sectionActorRole(sectionId);
+  const actor = state.actor.role;
+  if (actor === ACTOR_ROLES.GOVERNANCE_ADMIN) return false;
+  if (sectionRole === "2LOD") return actor === ACTOR_ROLES.APPROVER_2LOD;
+  if (sectionRole === "BUSINESS_PROPOSER") return actor === ACTOR_ROLES.BUSINESS_PROPOSER;
+  if (stage === WORKFLOW_STAGES.SUBMITTED_2LOD) return false;
+  if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) return actor === ACTOR_ROLES.BUSINESS_PROPOSER;
+  return actor === ACTOR_ROLES.RM;
+}
+
 function ownerBadge(ownerRole) {
-  const cls = ownerRole === "2LOD" ? "owner-2lod" : ownerRole === "Shared" ? "owner-shared" : "owner-1lod";
-  return `<span class="owner-badge ${cls}">${ownerRole}</span>`;
+  const cls = ownerRole === "2LOD"
+    ? "owner-2lod"
+    : ownerRole === "BUSINESS_PROPOSER"
+      ? "owner-shared"
+      : "owner-1lod";
+  const label = ownerRole === "BUSINESS_PROPOSER" ? "Business Proposer" : ownerRole === "2LOD" ? "2LOD" : "RM";
+  return `<span class="owner-badge ${cls}">${label}</span>`;
 }
 
 function isReadOnlyCadStatus(status) {
@@ -622,6 +765,100 @@ function isReadOnlyCadStatus(status) {
 
 function isReadOnlyChildStatus(status) {
   return status === "INFLIGHT" || status === "SUCCESS" || status === "FAILED";
+}
+
+function activeRouteEntity() {
+  if (state.route.view === "group") return state.data.groupCads.find((x) => x.id === state.route.groupCadId) || null;
+  if (state.route.view === "country") return state.data.countryCads.find((x) => x.id === state.route.countryCadId) || null;
+  if (state.route.view === "cet") return state.data.cets.find((x) => x.id === state.route.childId) || null;
+  if (state.route.view === "sandbox") return state.data.sandboxes.find((x) => x.id === state.route.childId) || null;
+  return null;
+}
+
+function canSubmitCurrentStage(row) {
+  const stage = row?.workflow?.stage;
+  if (!stage) return false;
+  if (stage === WORKFLOW_STAGES.DRAFT_RM || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM) return state.actor.role === ACTOR_ROLES.RM;
+  if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) return state.actor.role === ACTOR_ROLES.BUSINESS_PROPOSER;
+  return false;
+}
+
+function submitButtonText(row) {
+  const stage = row?.workflow?.stage;
+  if (stage === WORKFLOW_STAGES.DRAFT_RM || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM) return "Submit to Business Proposer";
+  if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) return "Submit to 2nd Line";
+  return "Submit";
+}
+
+function roleContextText() {
+  return `${actorRoleLabel(state.actor.role)} (${state.actor.region}, ${state.actor.product}, ${state.actor.clientSegment})`;
+}
+
+function renderWorkflowBanner(row) {
+  if (!row) return "";
+  const comments = row.workflow?.sectionComments || {};
+  const commentEntries = Object.entries(comments).filter(([, value]) => String(value || "").trim());
+  return `<section class="card workflow-banner">
+    <div class="panel-head">
+      <h3>Stage: ${workflowStageLabel(row.workflow?.stage)}</h3>
+      <div class="stage-role">Role: ${roleContextText()}</div>
+    </div>
+    <div class="table-filter-row">
+      <label for="actor-role-select">Acting as</label>
+      <select id="actor-role-select">
+        <option value="${ACTOR_ROLES.RM}" ${state.actor.role === ACTOR_ROLES.RM ? "selected" : ""}>1st Line RM</option>
+        <option value="${ACTOR_ROLES.BUSINESS_PROPOSER}" ${state.actor.role === ACTOR_ROLES.BUSINESS_PROPOSER ? "selected" : ""}>Business Proposer</option>
+        <option value="${ACTOR_ROLES.APPROVER_2LOD}" ${state.actor.role === ACTOR_ROLES.APPROVER_2LOD ? "selected" : ""}>Approver</option>
+        <option value="${ACTOR_ROLES.GOVERNANCE_ADMIN}" ${state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN ? "selected" : ""}>Governance Admin</option>
+      </select>
+    </div>
+    ${row.workflow?.lastDecision ? `<p class="muted">Last 2nd-line outcome: ${row.workflow.lastDecision}</p>` : ""}
+    ${commentEntries.length ? `<div class="warning-note">Section feedback: ${commentEntries.map(([k, v]) => `${k}: ${v}`).join(" | ")}</div>` : ""}
+    ${row.workflow?.endCommentary ? `<div class="warning-note">End commentary: ${row.workflow.endCommentary}</div>` : ""}
+  </section>`;
+}
+
+function applySubmitTransition(row) {
+  if (!row?.workflow) return;
+  if (row.workflow.stage === WORKFLOW_STAGES.DRAFT_RM || row.workflow.stage === WORKFLOW_STAGES.RETURNED_REWORK_RM) {
+    row.workflow.stage = WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER;
+    row.status = "DRAFT";
+    return;
+  }
+  if (row.workflow.stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || row.workflow.stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) {
+    row.workflow.stage = WORKFLOW_STAGES.SUBMITTED_2LOD;
+    row.status = "INFLIGHT";
+  }
+}
+
+function renderSecondLineDecisionPanel(row) {
+  if (!row?.workflow) return "";
+  if (state.actor.role !== ACTOR_ROLES.APPROVER_2LOD) return "";
+  if (row.workflow.stage !== WORKFLOW_STAGES.SUBMITTED_2LOD) return "";
+  const existing = row.workflow.lastDecision || "";
+  const sectionComments = row.workflow.sectionComments || {};
+  const sectionA = state.route.view === "sandbox" ? "sbx-guardrails" : "cet-risk";
+  const sectionB = state.route.view === "sandbox" ? "sbx-evidence" : "cet-financial";
+  const sectionALabel = state.route.view === "sandbox" ? "Sandbox Guardrails" : "CET Risk";
+  const sectionBLabel = state.route.view === "sandbox" ? "Sandbox Evidence" : "CET Financial";
+  return `<section class="card" id="decision-panel">
+    <h3>2nd Line Decision</h3>
+    <div class="form-stack">
+      <label><input type="radio" name="decision-outcome" value="accept" ${existing === "accept" ? "checked" : ""}/> Accept</label>
+      <label><input type="radio" name="decision-outcome" value="accept-caveats" ${existing === "accept-caveats" ? "checked" : ""}/> Accept with caveats</label>
+      <label><input type="radio" name="decision-outcome" value="reject" ${existing === "reject" ? "checked" : ""}/> Reject</label>
+      <label>Section Comment: ${sectionALabel}
+        <textarea id="decision-comment-a" rows="2">${sectionComments[sectionA] || ""}</textarea>
+      </label>
+      <label>Section Comment: ${sectionBLabel}
+        <textarea id="decision-comment-b" rows="2">${sectionComments[sectionB] || ""}</textarea>
+      </label>
+      <label>End Commentary
+        <textarea id="decision-end-commentary" rows="3">${row.workflow.endCommentary || ""}</textarea>
+      </label>
+      <button class="btn primary" data-submit-decision="1">Submit Decision</button>
+    </div>
+  </section>`;
 }
 
 function renderDescriptions(items) {
@@ -821,15 +1058,40 @@ function attachNumberFormatters() {
 }
 
 function enforceReadOnlyMode() {
-  if (state.route.view !== "cet" && state.route.view !== "sandbox") return;
-  const row = state.route.view === "cet"
-    ? state.data.cets.find((x) => x.id === state.route.childId)
-    : state.data.sandboxes.find((x) => x.id === state.route.childId);
-  if (!row || !isReadOnlyChildStatus(row.status)) return;
-  dom.viewRoot.querySelectorAll("input, textarea, select, button[data-create-next]").forEach((field) => {
-    if (field.id === "field-cet-ack") return;
-    field.setAttribute("disabled", "disabled");
-  });
+  const row = activeRouteEntity();
+  if (!row) return;
+  const readOnly = (state.route.view === "group" || state.route.view === "country")
+    ? isReadOnlyCadStatus(row.status)
+    : isReadOnlyChildStatus(row.status);
+  if (readOnly) {
+    dom.viewRoot.querySelectorAll("input, textarea, select, button[data-create-next]").forEach((field) => {
+      if (field.id === "field-cet-ack") return;
+      field.setAttribute("disabled", "disabled");
+    });
+    return;
+  }
+  if (state.route.view === "group" || state.route.view === "country") {
+    const stage = row.workflow?.stage;
+    const actor = state.actor.role;
+    let canEdit = false;
+    if (stage === WORKFLOW_STAGES.DRAFT_RM || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM) canEdit = actor === ACTOR_ROLES.RM;
+    if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) canEdit = actor === ACTOR_ROLES.BUSINESS_PROPOSER;
+    if (stage === WORKFLOW_STAGES.SUBMITTED_2LOD) canEdit = actor === ACTOR_ROLES.APPROVER_2LOD;
+    if (!canEdit) {
+      dom.viewRoot.querySelectorAll("input, textarea, select").forEach((field) => field.setAttribute("disabled", "disabled"));
+    }
+    return;
+  }
+  if (state.route.view === "cet" || state.route.view === "sandbox") {
+    dom.viewRoot.querySelectorAll("section.card").forEach((section) => {
+      const id = section.id || "";
+      if (!id.startsWith("cet-") && !id.startsWith("sbx-")) return;
+      const allowed = canEditSection(row, id);
+      section.querySelectorAll("input, textarea, select").forEach((field) => {
+        if (!allowed) field.setAttribute("disabled", "disabled");
+      });
+    });
+  }
 }
 
 function governanceIssueForRule(row, ruleId, payload) {
@@ -924,6 +1186,12 @@ function ownerAvatarCell(owner) {
   return `<span class="owner-cell" title="${owner || "Unassigned"}"><span class="owner-avatar">${ownerInitials(owner)}</span></span>`;
 }
 
+function participantCell(row, key) {
+  const participants = row.participants || defaultParticipants(row);
+  const name = participants[key] || "-";
+  return ownerCell(name);
+}
+
 function typeMeta(type) {
   const t = String(type || "").toUpperCase();
   const map = {
@@ -1000,6 +1268,9 @@ function rowComparable(row, key) {
     return order[String(row.type || "").toUpperCase()] || 99;
   }
   if (key === "country") return row.country || "Global";
+  if (key === "rm") return (row.participants || {}).rm || "";
+  if (key === "businessProposer") return (row.participants || {}).businessProposer || "";
+  if (key === "approver") return (row.participants || {}).approver || "";
   if (key === "status") return row.status || "";
   if (key === "inboxStatus") return inboxStatusFor(row);
   if (key === "utilization") {
@@ -1026,6 +1297,54 @@ function sortRows(rows, tableKey) {
   });
 }
 
+function isLaptopView() {
+  return window.matchMedia("(min-width: 1025px)").matches;
+}
+
+function paginateRows(rows, tableKey) {
+  const pageSize = isLaptopView() ? (TABLE_PAGE_SIZE[tableKey] || 0) : 0;
+  if (!pageSize) {
+    return { rows, total: rows.length, page: 1, totalPages: 1, start: rows.length ? 1 : 0, end: rows.length, pageSize: rows.length || 1 };
+  }
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const requested = Number(state.tablePage[tableKey] || 1);
+  const page = Math.min(Math.max(1, requested), totalPages);
+  state.tablePage[tableKey] = page;
+  const startIdx = (page - 1) * pageSize;
+  return {
+    rows: rows.slice(startIdx, startIdx + pageSize),
+    total,
+    page,
+    totalPages,
+    start: total ? (startIdx + 1) : 0,
+    end: Math.min(total, startIdx + pageSize),
+    pageSize
+  };
+}
+
+function renderPagination(tableKey, paging) {
+  if (!isLaptopView() || paging.totalPages <= 1) return "";
+  return `<div class="table-pager" role="navigation" aria-label="Pagination">
+    <span class="table-pager-meta">Showing ${paging.start}-${paging.end} of ${paging.total}</span>
+    <div class="table-pager-controls">
+      <button class="btn secondary small" data-page-table="${tableKey}" data-page-dir="prev" ${paging.page <= 1 ? "disabled" : ""}>Prev</button>
+      <span class="table-pager-meta">Page ${paging.page} / ${paging.totalPages}</span>
+      <button class="btn secondary small" data-page-table="${tableKey}" data-page-dir="next" ${paging.page >= paging.totalPages ? "disabled" : ""}>Next</button>
+    </div>
+  </div>`;
+}
+
+function syncShellLayoutMetrics() {
+  const topbarHeight = Math.ceil(dom.topbar?.getBoundingClientRect().height || 0);
+  const rootStyle = getComputedStyle(document.documentElement);
+  const fontPx = parseFloat(rootStyle.fontSize || "16") || 16;
+  const shellGapPx = 0.95 * fontPx;
+  const panelHeight = Math.max(320, Math.floor(window.innerHeight - topbarHeight - (shellGapPx * 2)));
+  document.documentElement.style.setProperty("--topbar-height", `${topbarHeight}px`);
+  document.documentElement.style.setProperty("--panel-height", `${panelHeight}px`);
+}
+
 function sortMeta(tableKey, key) {
   const sorters = state.sorters[tableKey] || [];
   const idx = sorters.findIndex((x) => x.key === key);
@@ -1042,7 +1361,9 @@ function renderColumnsToggle(tableKey) {
   const cols = state.visibleColumns[tableKey] || {};
   if (tableKey === "portfolio") {
     const options = [
-      { key: "owner", label: "Owner" },
+      { key: "rm", label: "RM" },
+      { key: "businessProposer", label: "Business Proposer" },
+      { key: "approver", label: "Approver" },
       { key: "legalEntity", label: "Legal Entity" },
       { key: "id", label: "ID" }
     ];
@@ -1152,7 +1473,9 @@ function renderHierarchyTable() {
   const selectedType = state.portfolioType || "all";
   const orderedOptional = state.portfolioColumnOrder.filter((k) => cols[k] && k !== "type");
   const optionalLabel = {
-    owner: "Owner",
+    rm: "RM",
+    businessProposer: "Business Proposer",
+    approver: "Approver",
     legalEntity: "Legal Entity",
     id: "ID"
   };
@@ -1162,7 +1485,9 @@ function renderHierarchyTable() {
     return 3;
   };
   const optionalCell = (row, _depth, key) => {
-    if (key === "owner") return `<td>${ownerAvatarCell(row.owner)}</td>`;
+    if (key === "rm") return `<td>${ownerAvatarCell((row.participants || {}).rm)}</td>`;
+    if (key === "businessProposer") return `<td>${ownerAvatarCell((row.participants || {}).businessProposer)}</td>`;
+    if (key === "approver") return `<td>${ownerAvatarCell((row.participants || {}).approver)}</td>`;
     if (key === "legalEntity") return `<td>${row.legalEntity || "-"}</td>`;
     if (key === "id") return `<td>${row.id}</td>`;
     return "<td></td>";
@@ -1284,18 +1609,14 @@ function renderLeftPanel() {
   ];
   const assignedToMeCount = allDocs.filter((x) => isAssignedToMeRow(x)).length;
   const assignedToTeamCount = allDocs.filter((x) => isAssignedToTeamRow(x)).length;
-  const myDraftCount = allDocs.filter((x) => isAssignedToMeRow(x) && inboxStatusFor(x) === "DRAFT").length;
-  const myFlightCount = allDocs.filter((x) => isAssignedToMeRow(x) && inboxStatusFor(x) === "INFLIGHT").length;
-  const teamDraftCount = allDocs.filter((x) => isAssignedToTeamRow(x) && inboxStatusFor(x) === "DRAFT").length;
-  const teamFlightCount = allDocs.filter((x) => isAssignedToTeamRow(x) && inboxStatusFor(x) === "INFLIGHT").length;
-  const alertCount = state.data.cets.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
+  const typeIcon = { group: "group", country: "country", cet: "cet", sandbox: "sandbox" };
   const entityTitle = (type) => ({ group: "Group CADs", country: "Country CADs", cet: "CETs", sandbox: "Sandboxes" }[type] || type);
   const rowStatus = (type, status, label) => `
     <button class="side-row ${type === "inbox" ? (state.inboxStatus === status ? "on" : "") : (state.homeType === type && state.homeStatus === status ? "on" : "")}" data-home-type="${type}" data-home-status="${status}">
       <span>${label}</span>
     </button>`;
   const parentType = (type) => `
-    <button class="menu-item ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all"><span>${entityTitle(type)}</span></button>`;
+    <button class="menu-item with-icon ${state.homeType === type && state.homeStatus === "all" ? "active" : ""}" data-home-type="${type}" data-home-status="all">${navIcon(typeIcon[type] || "file")} <span>${entityTitle(type)}</span></button>`;
   const statusRows = (type) => `
     <div class="side-rows ${state.homeType === type ? "open" : "closed"}">
       ${statusSetForType(type).map((status) => rowStatus(type, status, status)).join("")}
@@ -1361,12 +1682,6 @@ function renderLeftPanel() {
       <div class="side-group">${parentType("country")}${statusRows("country")}</div>
       <div class="side-group">${parentType("cet")}${statusRows("cet")}</div>
       <div class="side-group">${parentType("sandbox")}${statusRows("sandbox")}</div>
-    </div>
-    <div class="menu-group">
-      <p class="menu-title">Action Filters</p>
-      <button class="menu-item ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
-      <button class="menu-item ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
-      <button class="menu-item ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts <span class="mini-badge warn">${alertCount}</span></button>
     </div>`;
 
   const inboxDocs = inboxRows();
@@ -1535,21 +1850,29 @@ function renderHome() {
     rows[state.homeType].filter((x) => state.homeStatus === "all" || x.status === state.homeStatus),
     "home"
   );
+  const selectedPaging = paginateRows(selectedRows, "home");
   const cols = state.visibleColumns.home;
 
-  const selectedTable = selectedRows.map((r) => `<tr>
-    <td class="key-col">${r.name}<div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
+  const selectedTable = selectedPaging.rows.map((r) => `<tr>
+    <td class="key-col"><a href="${openHrefForRow(r, state.homeType)}">${r.name}</a><div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
     ${cols.id ? `<td>${r.id}</td>` : ""}
     ${cols.legalEntity ? `<td>${r.legalEntity || "-"}</td>` : ""}
-    <td>${countryCell(r.country)}</td><td>${r.product}</td><td>${r.clientSegment || "-"}</td><td>${statusTag(r.status)}</td><td>${ownerCell(r.owner)}</td><td><a href="${openHrefForRow(r, state.homeType)}">Open</a></td>
+    <td>${countryCell(r.country)}</td><td>${r.product}</td><td>${r.clientSegment || "-"}</td><td>${statusTag(r.status)}</td><td>${participantCell(r, "rm")}</td><td>${participantCell(r, "businessProposer")}</td><td>${participantCell(r, "approver")}</td>
   </tr>`).join("");
 
-  const allRows = [...rows.group, ...rows.country, ...rows.cet, ...rows.sandbox];
-  const scopedRows = applyCommonFilters(allRows);
-  const myScopeCount = scopedRows.length;
-  const inFlightCount = scopedRows.filter((x) => x.status === "INFLIGHT").length;
-  const governanceCount = rows.cet.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
-  const completedCount = scopedRows.filter((x) => x.status === "SUCCESS" || x.status === "RETIRED" || x.status === "FAILED").length;
+  const metricRows = rows[state.homeType];
+  const statusCardsByType = {
+    group: ["ACTIVE", "RETIRED", "DRAFT"],
+    country: ["ACTIVE", "RETIRED", "DRAFT"],
+    cet: ["DRAFT", "INFLIGHT", "SUCCESS", "FAILED"],
+    sandbox: ["DRAFT", "INFLIGHT", "SUCCESS", "FAILED"]
+  };
+  const metricStatuses = statusCardsByType[state.homeType] || [];
+  const governanceCount = metricRows.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
+  const metricCards = metricStatuses.map((status) => ({
+    label: status,
+    value: metricRows.filter((x) => x.status === status).length
+  }));
   const statusText = `${state.homeType.toUpperCase()} / ${state.homeStatus.toUpperCase()}`;
 
   const selectedTableHtml = `
@@ -1558,7 +1881,7 @@ function renderHome() {
         <h3>Selected View: ${statusText}</h3>
         ${renderColumnsToggle("home")}
       </div>
-      <p class="muted">Filters Applied: ${state.quickView !== "none" ? `Action=${state.quickView}` : "Action=All Docs"}${filterValues("product").length ? ` | Product=${filterValues("product").join(", ")}` : ""}${filterValues("clientSegment").length ? ` | Segment=${filterValues("clientSegment").join(", ")}` : ""}${state.searchTerm ? ` | Search=\"${state.searchTerm}\"` : ""}</p>
+      <p class="muted">Filters Applied: ${state.quickView === "none" ? "Action=All Docs" : state.quickView === "mydocs" ? "Action=My Docs" : "Action=Alerts"}${filterValues("product").length ? ` | Product=${filterValues("product").join(", ")}` : ""}${filterValues("clientSegment").length ? ` | Segment=${filterValues("clientSegment").join(", ")}` : ""}${state.searchTerm ? ` | Search=\"${state.searchTerm}\"` : ""}</p>
       <table class="data-table">
         <thead><tr>
           ${sortableTh("home", "name", "Name", "key-col")}
@@ -1568,10 +1891,12 @@ function renderHome() {
           ${sortableTh("home", "product", "Product")}
           ${sortableTh("home", "clientSegment", "Segment")}
           ${sortableTh("home", "status", "Status")}
-          ${sortableTh("home", "owner", "Owner")}
-          <th>Action</th></tr></thead>
-        <tbody>${selectedTable || `<tr><td colspan="${7 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
+          <th>RM</th>
+          <th>Business Proposer</th>
+          <th>Approver</th></tr></thead>
+        <tbody>${selectedTable || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
       </table>
+      ${renderPagination("home", selectedPaging)}
     </section>`;
 
   dom.viewRoot.innerHTML = `
@@ -1580,17 +1905,20 @@ function renderHome() {
         <div class="main-search-row">
           <label for="main-search">Search</label>
         <div class="autocomplete-wrap">
-          <input id="main-search" value="${state.searchTerm}" autocomplete="off" placeholder="ID / Name / Owner / Country" />
+          <input id="main-search" value="${state.searchTerm}" autocomplete="off" placeholder="ID / Name / RM / Country" />
           ${renderSearchAutocomplete()}
         </div>
         <button class="btn secondary small" data-action="reset-search">Reset</button>
       </div>
       ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
       <div class="metric-grid">
-        <div class="metric"><span>My Scope Docs</span><strong>${myScopeCount}</strong></div>
-        <div class="metric"><span>Inflight</span><strong>${inFlightCount}</strong></div>
+        ${metricCards.map((card) => `<div class="metric"><span>${card.label}</span><strong>${card.value}</strong></div>`).join("")}
         <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
-        <div class="metric"><span>Closed</span><strong>${completedCount}</strong></div>
+      </div>
+      <div class="table-filter-row">
+        <button class="btn secondary small ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
+        <button class="btn secondary small ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
+        <button class="btn secondary small ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Alerts</button>
       </div>
     </section>
     ${selectedTableHtml}
@@ -1602,16 +1930,19 @@ function renderInbox() {
   const cols = state.visibleColumns.inbox;
   const rows = sortRows(inboxRows().filter((row) => {
     if (!term) return true;
-    const haystack = [row.id, row.name, row.owner, row.country, row.product, row.clientSegment].filter(Boolean).join(" ").toLowerCase();
+    const participants = row.participants || {};
+    const haystack = [row.id, row.name, row.owner, participants.rm, participants.businessProposer, participants.approver, row.country, row.product, row.clientSegment].filter(Boolean).join(" ").toLowerCase();
     return haystack.includes(term);
   }), "inbox");
+  const inboxPaging = paginateRows(rows, "inbox");
   const counts = {
-    draft: rows.filter((x) => inboxStatusFor(x) === "DRAFT").length,
+    myScope: rows.length,
     inflight: rows.filter((x) => inboxStatusFor(x) === "INFLIGHT").length,
+    governanceAlerts: rows.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length,
     closed: rows.filter((x) => ["SUCCESS", "FAILED", "RETIRED"].includes(inboxStatusFor(x))).length
   };
-  const tableRows = rows.map((r) => `<tr>
-    <td class="key-col">${r.name}<div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
+  const tableRows = inboxPaging.rows.map((r) => `<tr>
+    <td class="key-col"><a href="${openHrefForRow(r, r.type.toLowerCase())}">${r.name}</a><div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
     <td>${r.type}</td>
     ${cols.id ? `<td>${r.id}</td>` : ""}
     ${cols.legalEntity ? `<td>${r.legalEntity || "-"}</td>` : ""}
@@ -1619,8 +1950,9 @@ function renderInbox() {
     <td>${r.product}</td>
     <td>${r.clientSegment || "-"}</td>
     <td>${statusTag(inboxStatusFor(r))}</td>
-    <td>${ownerCell(r.owner)}</td>
-    <td><a href="${openHrefForRow(r, r.type.toLowerCase())}">Open</a></td>
+    <td>${participantCell(r, "rm")}</td>
+    <td>${participantCell(r, "businessProposer")}</td>
+    <td>${participantCell(r, "approver")}</td>
   </tr>`).join("");
 
   dom.viewRoot.innerHTML = `
@@ -1628,14 +1960,19 @@ function renderInbox() {
       <h2>Inbox</h2>
       <div class="main-search-row">
         <label for="main-search">Search</label>
-        <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
+        <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / RM / Country" />
         <button class="btn secondary small" data-action="reset-search">Reset</button>
       </div>
+      <div class="table-filter-row">
+        <button class="btn secondary small ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
+        <button class="btn secondary small ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
+        <button class="btn secondary small ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts</button>
+      </div>
       <div class="metric-grid">
-        <div class="metric"><span>Draft</span><strong>${counts.draft}</strong></div>
+        <div class="metric"><span>My Docs</span><strong>${counts.myScope}</strong></div>
         <div class="metric"><span>Inflight</span><strong>${counts.inflight}</strong></div>
+        <div class="metric"><span>Governance Alerts</span><strong>${counts.governanceAlerts}</strong></div>
         <div class="metric"><span>Closed</span><strong>${counts.closed}</strong></div>
-        <div class="metric"><span>Total</span><strong>${rows.length}</strong></div>
       </div>
     </section>
     <section class="card">
@@ -1653,10 +1990,12 @@ function renderInbox() {
           ${sortableTh("inbox", "product", "Product")}
           ${sortableTh("inbox", "clientSegment", "Segment")}
           ${sortableTh("inbox", "inboxStatus", "Status")}
-          ${sortableTh("inbox", "owner", "Owner")}
-          <th>Action</th></tr></thead>
-        <tbody>${tableRows || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
+          <th>RM</th>
+          <th>Business Proposer</th>
+          <th>Approver</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan="${11 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
       </table>
+      ${renderPagination("inbox", inboxPaging)}
     </section>
   `;
 }
@@ -1664,20 +2003,40 @@ function renderInbox() {
 function renderPortfolio() {
   const typeMap = { all: "ALL", group: "GROUP", country: "COUNTRY", cet: "CET", sandbox: "SANDBOX" };
   const statusText = `${typeMap[state.portfolioType] || "ALL"} / ${state.homeStatus.toUpperCase()}`;
+  const allRows = applyCommonFilters([
+    ...state.data.groupCads,
+    ...state.data.countryCads,
+    ...state.data.cets,
+    ...state.data.sandboxes
+  ]);
+  const inflightCount = allRows.filter((x) => x.status === "INFLIGHT").length;
+  const governanceCount = allRows.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
+  const closedCount = allRows.filter((x) => ["SUCCESS", "FAILED", "RETIRED"].includes(x.status)).length;
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Portfolio Monitoring</h2>
       <p class="warning-note">Portfolio Monitoring is an experimental feature and currently out of scope.</p>
       <div class="main-search-row">
         <label for="main-search">Search</label>
-        <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / Owner / Country" />
+        <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / RM / Country" />
         <button class="btn secondary small" data-action="reset-search">Reset</button>
+      </div>
+      <div class="table-filter-row">
+        <button class="btn secondary small ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
+        <button class="btn secondary small ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
+        <button class="btn secondary small ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts</button>
       </div>
       <div class="table-filter-row portfolio-filter-row">
         ${renderTagMultiSelect("country", "Country")}
         ${renderTagMultiSelect("clientSegment", "Segment")}
         ${renderTagMultiSelect("product", "Product")}
         <button class="btn secondary small portfolio-clear-btn" data-action="reset-table-filters">Clear</button>
+      </div>
+      <div class="metric-grid">
+        <div class="metric"><span>My Docs</span><strong>${allRows.length}</strong></div>
+        <div class="metric"><span>Inflight</span><strong>${inflightCount}</strong></div>
+        <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
+        <div class="metric"><span>Closed</span><strong>${closedCount}</strong></div>
       </div>
     </section>
     <section class="card">
@@ -1706,12 +2065,15 @@ function renderGroupDetail() {
   );
 
   const cols = state.visibleColumns.groupDetail;
+  const workflowBanner = renderWorkflowBanner(group);
   const rowData = countries.map((c) => {
     const counts = childCounts(c.id);
     return { ...c, cetsCount: counts.cets, sandboxesCount: counts.sandboxes };
   });
-  const rows = sortRows(rowData, "groupDetail").map((c) =>
-    `<tr><td class="key-col">${c.name}<div>${idTag(c.id)}${legalEntityTag(c)}</div></td>${cols.id ? `<td>${c.id}</td>` : ""}${cols.legalEntity ? `<td>${c.legalEntity || "-"}</td>` : ""}<td>${countryCell(c.country)}</td><td>${c.clientSegment || "-"}</td><td>${statusTag(c.status)}</td><td>${c.cetsCount}</td><td>${c.sandboxesCount}</td><td>${ownerCell(c.owner)}</td><td><a href="${PATH.country(group.id, c.country, c.id)}">Open</a></td></tr>`
+  const sortedRows = sortRows(rowData, "groupDetail");
+  const groupDetailPaging = paginateRows(sortedRows, "groupDetail");
+  const rows = groupDetailPaging.rows.map((c) =>
+    `<tr><td class="key-col"><a href="${PATH.country(group.id, c.country, c.id)}">${c.name}</a><div>${idTag(c.id)}${legalEntityTag(c)}</div></td>${cols.id ? `<td>${c.id}</td>` : ""}${cols.legalEntity ? `<td>${c.legalEntity || "-"}</td>` : ""}<td>${statusTag(c.status)}</td><td>${c.cetsCount}</td><td>${c.sandboxesCount}</td><td>${participantCell(c, "rm")}</td><td>${participantCell(c, "businessProposer")}</td><td>${participantCell(c, "approver")}</td></tr>`
   ).join("");
   const readOnly = isReadOnlyCadStatus(group.status);
   const groupHeader = `<div class="descriptions-bordered top-detail-grid">
@@ -1739,7 +2101,9 @@ function renderGroupDetail() {
       ${renderDescriptions([
         { label: "Product", value: `<span data-summary-value="group-product">${group.product || "-"}</span>` },
         { label: "Client Segment", value: `<span data-summary-value="group-segment">${group.clientSegment || "-"}</span>` },
-        { label: "Owner", value: group.owner },
+        { label: "RM", value: (group.participants || {}).rm || group.owner || "-" },
+        { label: "Business Proposer", value: (group.participants || {}).businessProposer || "-" },
+        { label: "Approver", value: (group.participants || {}).approver || "-" },
         { label: "Legal Entity", value: group.legalEntity || "-" }
       ])}
     </section>`;
@@ -1747,7 +2111,9 @@ function renderGroupDetail() {
     ? `${groupHeader}${renderDescriptions([
       { label: "Product", value: group.product },
       { label: "Client Segment", value: group.clientSegment },
-      { label: "Owner", value: group.owner },
+      { label: "RM", value: (group.participants || {}).rm || group.owner || "-" },
+      { label: "Business Proposer", value: (group.participants || {}).businessProposer || "-" },
+      { label: "Approver", value: (group.participants || {}).approver || "-" },
       { label: "Legal Entity", value: group.legalEntity || "-" }
     ])}`
     : `<div class="form-stack">
@@ -1766,12 +2132,15 @@ function renderGroupDetail() {
       </div>`;
 
   dom.viewRoot.innerHTML = `
+    ${workflowBanner}
     ${readOnly ? `<section class="card" id="cad-overview"><h2>Group CAD Detail</h2>${overviewContent}</section>` : `${groupSnapshot}
     <section class="card" id="cad-overview">
       <h2>Group CAD Overview (Editable)</h2>
       ${helperBox("Keep Group CAD summary focused on portfolio intent and avoid repeating country-level execution details.")}
       ${overviewContent}
     </section>`}
+    <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Programme summary and country rollout status.</p></section>
+    <section class="card" id="cad-strategy"><h3>Strategy</h3><p class="muted">Portfolio strategy and constraints.</p></section>
     <section class="card" id="cad-basic">
       <h3>Country CADs</h3>
       <div class="main-search-row">
@@ -1782,18 +2151,16 @@ function renderGroupDetail() {
           ${sortableTh("groupDetail", "name", "Name", "key-col")}
           ${cols.id ? sortableTh("groupDetail", "id", "ID") : ""}
           ${cols.legalEntity ? sortableTh("groupDetail", "legalEntity", "Legal Entity") : ""}
-          ${sortableTh("groupDetail", "country", "Country")}
-          ${sortableTh("groupDetail", "clientSegment", "Segment")}
           ${sortableTh("groupDetail", "status", "Status")}
           ${sortableTh("groupDetail", "cetsCount", "CETs")}
           ${sortableTh("groupDetail", "sandboxesCount", "Sandboxes")}
-          ${sortableTh("groupDetail", "owner", "Owner")}
-          <th>Action</th></tr></thead>
+          <th>RM</th>
+          <th>Business Proposer</th>
+          <th>Approver</th></tr></thead>
         <tbody>${rows || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No country CADs</td></tr>`}</tbody>
       </table>
+      ${renderPagination("groupDetail", groupDetailPaging)}
     </section>
-    <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Programme summary and country rollout status.</p></section>
-    <section class="card" id="cad-strategy"><h3>Strategy</h3><p class="muted">Portfolio strategy and constraints.</p></section>
     <section class="card" id="cad-portfolio"><h3>Portfolio Details</h3><p class="muted">Portfolio level limits and segmentation.</p></section>
     <section class="card" id="cad-kac"><h3>Key Acceptance Criteria</h3><p class="muted">KAC checklist.</p></section>
     <section class="card" id="cad-appendix"><h3>Appendix</h3><p class="muted">Supporting notes.</p></section>
@@ -1827,7 +2194,9 @@ function renderCountryDetail() {
         { label: "Country", value: countryCad.country },
         { label: "Product", value: countryCad.product },
         { label: "Client Segment", value: countryCad.clientSegment },
-        { label: "Owner", value: countryCad.owner },
+        { label: "RM", value: (countryCad.participants || {}).rm || countryCad.owner || "-" },
+        { label: "Business Proposer", value: (countryCad.participants || {}).businessProposer || "-" },
+        { label: "Approver", value: (countryCad.participants || {}).approver || "-" },
         { label: "Legal Entity", value: countryCad.legalEntity || "-" },
         { label: "Summary", value: `<span data-summary-value="country-summary">-</span>` }
       ])}
@@ -1837,7 +2206,9 @@ function renderCountryDetail() {
       { label: "Country", value: countryCad.country },
       { label: "Product", value: countryCad.product },
       { label: "Client Segment", value: countryCad.clientSegment },
-      { label: "Owner", value: countryCad.owner },
+      { label: "RM", value: (countryCad.participants || {}).rm || countryCad.owner || "-" },
+      { label: "Business Proposer", value: (countryCad.participants || {}).businessProposer || "-" },
+      { label: "Approver", value: (countryCad.participants || {}).approver || "-" },
       { label: "Legal Entity", value: countryCad.legalEntity || "-" }
     ])}`
     : `<div class="form-stack">
@@ -1850,7 +2221,15 @@ function renderCountryDetail() {
       </div>`;
 
   const cols = state.visibleColumns.countryDetail;
+  const workflowBanner = renderWorkflowBanner(countryCad);
+  const childRowsSorted = sortRows([
+    ...cets.map((x) => ({ type: "CET", ...x })),
+    ...sandboxes.map((x) => ({ type: "SANDBOX", ...x }))
+  ], "countryDetail");
+  const countryDetailPaging = paginateRows(childRowsSorted, "countryDetail");
+  const childRowsHtml = countryDetailPaging.rows.map((x) => `<tr><td class="key-col"><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">${x.name}</a><div>${idTag(x.id)}${legalEntityTag(x)}</div></td><td>${x.type}</td>${cols.id ? `<td>${x.id}</td>` : ""}${cols.legalEntity ? `<td>${x.legalEntity || "-"}</td>` : ""}<td>${x.clientSegment || "-"}</td><td>${statusTag(x.status)}</td><td>${participantCell(x, "rm")}</td><td>${participantCell(x, "businessProposer")}</td><td>${participantCell(x, "approver")}</td></tr>`).join("");
   dom.viewRoot.innerHTML = `
+    ${workflowBanner}
     ${readOnly ? `<section class="card" id="cad-overview"><h2>Country CAD Detail</h2>${overviewContent}
       <p class="muted">Successful CETs can be referenced as audit trail for interim changes.</p>
       <ul>${successful.map((s) => `<li>${s.id} - ${s.name}</li>`).join("") || "<li>No successful CET yet</li>"}</ul>
@@ -1862,6 +2241,8 @@ function renderCountryDetail() {
       <p class="muted">Successful CETs can be referenced as audit trail for interim changes.</p>
       <ul>${successful.map((s) => `<li>${s.id} - ${s.name}</li>`).join("") || "<li>No successful CET yet</li>"}</ul>
     </section>`}
+    <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Country summary for policy and limits.</p></section>
+    <section class="card" id="cad-strategy"><h3>Strategy</h3><p class="muted">Country strategy for execution.</p></section>
     <section class="card" id="cad-basic">
       <h3>Child Tests (parallel tracks)</h3>
       <div class="main-search-row">
@@ -1875,18 +2256,15 @@ function renderCountryDetail() {
           ${cols.legalEntity ? sortableTh("countryDetail", "legalEntity", "Legal Entity") : ""}
           ${sortableTh("countryDetail", "clientSegment", "Segment")}
           ${sortableTh("countryDetail", "status", "Status")}
-          ${sortableTh("countryDetail", "owner", "Owner")}
-          <th>Action</th></tr></thead>
+          <th>RM</th>
+          <th>Business Proposer</th>
+          <th>Approver</th></tr></thead>
         <tbody>
-          ${sortRows([
-            ...cets.map((x) => ({ type: "CET", ...x })),
-            ...sandboxes.map((x) => ({ type: "SANDBOX", ...x }))
-          ], "countryDetail").map((x) => `<tr><td class="key-col">${x.name}<div>${idTag(x.id)}${legalEntityTag(x)}</div></td><td>${x.type}</td>${cols.id ? `<td>${x.id}</td>` : ""}${cols.legalEntity ? `<td>${x.legalEntity || "-"}</td>` : ""}<td>${x.clientSegment || "-"}</td><td>${statusTag(x.status)}</td><td>${ownerCell(x.owner)}</td><td><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">Open</a></td></tr>`).join("") || `<tr><td colspan="${7 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No child tests</td></tr>`}
+          ${childRowsHtml || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No child tests</td></tr>`}
         </tbody>
       </table>
+      ${renderPagination("countryDetail", countryDetailPaging)}
     </section>
-    <section class="card" id="cad-summary"><h3>Summary</h3><p class="muted">Country summary for policy and limits.</p></section>
-    <section class="card" id="cad-strategy"><h3>Strategy</h3><p class="muted">Country strategy for execution.</p></section>
     <section class="card" id="cad-portfolio"><h3>Portfolio Details</h3><p class="muted">Portfolio controls and metrics.</p></section>
     <section class="card" id="cad-kac"><h3>Key Acceptance Criteria</h3><p class="muted">Acceptance gates.</p></section>
     <section class="card" id="cad-appendix"><h3>Appendix</h3><p class="muted">Appendix narratives.</p></section>
@@ -1954,6 +2332,7 @@ function renderCetOrSandbox() {
     </section>`;
 
     dom.viewRoot.innerHTML = `
+      ${renderWorkflowBanner(row)}
       ${readOnly ? `<section class="card" id="sbx-overview"><h2>Sandbox Detail</h2>${topDetailSummary("sandbox", row)}${renderDescriptions([
         { label: "Country", value: row.country || "-" },
         { label: "Product", value: row.product || "-" },
@@ -1997,7 +2376,8 @@ function renderCetOrSandbox() {
               <textarea id="field-sbx-evidence" data-required="true" data-label="Sandbox Evidence" rows="3" placeholder="Attach observed outcomes, variances, and recommendation."></textarea>
             </label>`}
         </div>
-      </section>`;
+      </section>
+      ${renderSecondLineDecisionPanel(row)}`;
     return;
   }
 
@@ -2085,6 +2465,7 @@ function renderCetOrSandbox() {
     </div>`);
 
   dom.viewRoot.innerHTML = `
+    ${renderWorkflowBanner(row)}
     ${readOnly ? `<section class="card" id="cet-overview"><h2>CET Detail</h2>${topDetailSummary("cet", row)}${renderDescriptions([
       { label: "Start Date", value: row.startDate || "-" },
       { label: "End Date", value: row.endDate || "-" },
@@ -2163,7 +2544,8 @@ function renderCetOrSandbox() {
       </label>`}`)}
     ${sectionCard("cet-approvals-2lod", `${helperBox("First approval is by relevant CCO. Additional approvals may be required based on delegated authority.")}<label>2LOD Approval Conditions
       <textarea id="field-cet-2lod" data-required="true" data-label="2LOD Approval Conditions" rows="3">${row.twoLodApproval || ""}</textarea>
-    </label>`)}`;
+    </label>`)}
+    ${renderSecondLineDecisionPanel(row)}`;
 }
 
 function setBreadcrumb() {
@@ -2354,7 +2736,9 @@ function manageRightPanelForActiveSection() {
 function renderIssuePanel() {
   const { blockers, errors, warnings, total } = state.issueStore.summary;
   dom.issueSummary.textContent = `Blockers ${blockers} | Errors ${errors} | Warnings ${warnings}`;
-  dom.submitBtn.disabled = total > 0;
+  const active = activeRouteEntity();
+  const stageAllowed = Boolean(active && canSubmitCurrentStage(active));
+  dom.submitBtn.disabled = !stageAllowed || total > 0;
   const activeCet = state.route.view === "cet" ? state.data.cets.find((x) => x.id === state.route.childId) : null;
 
   const filtered = state.rightPanel.activeFilter === "all"
@@ -2465,6 +2849,7 @@ function openCreateCetDrawer() {
   state.createDrawer.open = true;
   state.createDrawer.step = 1;
   state.createDrawer.errors = [];
+  state.createDrawer.warnings = [];
   state.createDrawer.draft = {
     parentCountryCadId: "",
     products: [],
@@ -2482,6 +2867,7 @@ function openCreateCetDrawer() {
 function closeCreateCetDrawer() {
   state.createDrawer.open = false;
   state.createDrawer.errors = [];
+  state.createDrawer.warnings = [];
   renderCreateCetDrawer();
 }
 
@@ -2500,7 +2886,52 @@ function validateCreateStepOne() {
   if (!draft.startDate) errors.push("Start Date is required.");
   if (!draft.endDate) errors.push("End Date is required.");
   state.createDrawer.errors = errors;
+  state.createDrawer.warnings = createCetWarnings(draft);
   return errors.length === 0;
+}
+
+function normalizeSelection(values) {
+  return [...new Set(values.map((x) => String(x || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function sameSelection(a, b) {
+  const aa = normalizeSelection(a);
+  const bb = normalizeSelection(b);
+  if (aa.length !== bb.length) return false;
+  return aa.every((value, idx) => value === bb[idx]);
+}
+
+function createCetContextOptions(parentCountryCadId) {
+  const selected = parentCountryCadId ? getCountryCadById(parentCountryCadId) : null;
+  if (!selected) return { products: [], segments: [] };
+  const lineageRows = state.data.countryCads.filter((cad) => cad.groupCadId === selected.groupCadId);
+  const products = normalizeSelection(lineageRows.map((cad) => cad.product));
+  const segments = normalizeSelection(lineageRows.map((cad) => cad.clientSegment));
+  return { products, segments };
+}
+
+function createCetWarnings(draft) {
+  const warnings = [];
+  if (draft.startDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const proposed = new Date(draft.startDate);
+    proposed.setHours(0, 0, 0, 0);
+    if (!Number.isNaN(proposed.getTime()) && proposed <= today) {
+      warnings.push("Proposed Start Date is today/past. A future date is recommended.");
+    }
+  }
+  if (draft.parentCountryCadId && draft.products.length && draft.clientSegments.length) {
+    const duplicate = state.data.cets.find((cet) =>
+      cet.countryCadId === draft.parentCountryCadId &&
+      sameSelection(cet.products || [cet.product], draft.products) &&
+      sameSelection(cet.clientSegments || [cet.clientSegment], draft.clientSegments)
+    );
+    if (duplicate) {
+      warnings.push(`Similar CET already exists (${duplicate.id}: ${duplicate.name}). You can continue, but review overlap.`);
+    }
+  }
+  return warnings;
 }
 
 function createCetFromDraft() {
@@ -2553,7 +2984,19 @@ function createCetFromDraft() {
     ],
     financials: defaultCetFinancials({ ...draft, exposure: 0, limits: { peakExposure: 0 } }, state.data.cets.length),
     endorsements: defaultEndorsements({ ...draft, owner: state.data.userProfile?.name || "CET Owner" }, state.data.cets.length),
-    issues: []
+    issues: [],
+    participants: {
+      rm: state.data.userProfile?.name || "Country RM",
+      businessProposer: `Business Proposer - ${countryCad.country || "Region"}`,
+      approver: "Approver CCO",
+      governanceAdmin: "Governance Ops"
+    },
+    workflow: {
+      stage: WORKFLOW_STAGES.DRAFT_RM,
+      lastDecision: "",
+      sectionComments: {},
+      endCommentary: ""
+    }
   };
   state.data.cets.unshift(newRow);
   state.homeType = "cet";
@@ -2575,10 +3018,12 @@ function renderCreateCetDrawer() {
   }
   const draft = state.createDrawer.draft;
   const countryOptions = state.data.countryCads.map((cad) => `<option value="${cad.id}" ${draft.parentCountryCadId === cad.id ? "selected" : ""}>${cad.country} - ${cad.name} (${cad.id})</option>`).join("");
-  const products = uniqueValues(state.data.countryCads, "product");
-  const segments = uniqueValues(state.data.countryCads, "clientSegment");
+  const contextOptions = createCetContextOptions(draft.parentCountryCadId);
+  const products = contextOptions.products;
+  const segments = contextOptions.segments;
   const checked = (arr, value) => arr.includes(value) ? "checked" : "";
   const selectedCountry = draft.parentCountryCadId ? getCountryCadById(draft.parentCountryCadId) : null;
+  state.createDrawer.warnings = createCetWarnings(draft);
 
   dom.createCetDrawer.innerHTML = `
     <div class="drawer-head">
@@ -2589,36 +3034,49 @@ function renderCreateCetDrawer() {
       <button class="icon-btn" data-drawer-close="1" aria-label="Close">x</button>
     </div>
     <div class="drawer-form">
-      <label>Parent Country CAD *
-        <select id="create-parent-country">
-          <option value="">Select Country CAD</option>
-          ${countryOptions}
-        </select>
-      </label>
-      <label>Product(s) *</label>
-      <div class="checkbox-grid">
-        ${products.map((product) => `<label><input type="checkbox" name="create-products" value="${product}" ${checked(draft.products, product)} /> ${product}</label>`).join("")}
-      </div>
-      <label>Client Segment(s) *</label>
-      <div class="checkbox-grid">
-        ${segments.map((segment) => `<label><input type="checkbox" name="create-segments" value="${segment}" ${checked(draft.clientSegments, segment)} /> ${segment}</label>`).join("")}
-      </div>
-      <label>CET Name *
-        <input id="create-cet-name" value="${draft.name || ""}" />
-      </label>
-      <label>Rationale *
-        <textarea id="create-cet-rationale" rows="3">${draft.rationale || ""}</textarea>
-      </label>
-      <div class="form-grid">
-        <label>Proposed Start Date *
-          <input id="create-start-date" type="date" value="${draft.startDate || ""}" />
+      <section class="drawer-section">
+        <h3>Parent Context</h3>
+        <label>Parent Country CAD *
+          <select id="create-parent-country">
+            <option value="">Select Country CAD</option>
+            ${countryOptions}
+          </select>
         </label>
-        <label>Proposed End Date *
-          <input id="create-end-date" type="date" value="${draft.endDate || ""}" />
+      </section>
+      <section class="drawer-section">
+        <h3>Commercial Scope</h3>
+        <label>Product(s) *</label>
+        <div class="checkbox-grid ${selectedCountry ? "" : "disabled"}">
+          ${products.map((product) => `<label><input type="checkbox" name="create-products" value="${product}" ${checked(draft.products, product)} ${selectedCountry ? "" : "disabled"} /> ${product}</label>`).join("") || `<p class="muted">Select a Country CAD to view applicable products.</p>`}
+        </div>
+        <label>Client Segment(s) *</label>
+        <div class="checkbox-grid ${selectedCountry ? "" : "disabled"}">
+          ${segments.map((segment) => `<label><input type="checkbox" name="create-segments" value="${segment}" ${checked(draft.clientSegments, segment)} ${selectedCountry ? "" : "disabled"} /> ${segment}</label>`).join("") || `<p class="muted">Select a Country CAD to view applicable client segments.</p>`}
+        </div>
+      </section>
+      <section class="drawer-section">
+        <h3>Proposal Details</h3>
+        <label>CET Name *
+          <input id="create-cet-name" value="${draft.name || ""}" />
         </label>
-      </div>
+        <label>Rationale *
+          <textarea id="create-cet-rationale" rows="3">${draft.rationale || ""}</textarea>
+        </label>
+      </section>
+      <section class="drawer-section">
+        <h3>Timeline</h3>
+        <div class="form-grid">
+          <label>Proposed Start Date *
+            <input id="create-start-date" type="date" value="${draft.startDate || ""}" />
+          </label>
+          <label>Proposed End Date *
+            <input id="create-end-date" type="date" value="${draft.endDate || ""}" />
+          </label>
+        </div>
+      </section>
       ${selectedCountry ? `<p class="muted">Parent trace: ${selectedCountry.groupCadId} > ${selectedCountry.id}</p>` : ""}
       ${state.createDrawer.errors.length ? `<div class="warning-note">${state.createDrawer.errors.join("<br/>")}</div>` : ""}
+      ${state.createDrawer.warnings.length ? `<div class="warning-note soft">${state.createDrawer.warnings.join("<br/>")}</div>` : ""}
     </div>
     <div class="drawer-footer">
       <button class="btn secondary" data-drawer-close="1">Cancel</button>
@@ -2664,6 +3122,13 @@ function render() {
   const detailRoute = state.route.view === "group" || state.route.view === "country" || state.route.view === "cet" || state.route.view === "sandbox";
   const showActions = detailRoute;
   dom.actionBar.style.display = showActions ? "flex" : "none";
+  syncShellLayoutMetrics();
+  const active = activeRouteEntity();
+  const hideSave = (state.route.view === "group" || state.route.view === "country") && active?.status === "ACTIVE";
+  dom.saveBtn.style.display = hideSave ? "none" : "inline-flex";
+  dom.submitBtn.textContent = submitButtonText(active);
+  dom.submitBtn.disabled = !(active && canSubmitCurrentStage(active));
+  dom.submitBtn.style.display = active && canSubmitCurrentStage(active) ? "inline-flex" : "none";
   const noRightPanel = !detailRoute;
   dom.appShell?.classList.toggle("no-right-panel", noRightPanel);
   if (noRightPanel) state.rightPanel.isOpen = false;
@@ -2738,6 +3203,20 @@ function populateFilters() {}
 function initEvents() {
   window.addEventListener("hashchange", render);
 
+  dom.saveBtn.addEventListener("click", () => {
+    const row = activeRouteEntity();
+    if (!row?.workflow) return;
+    row.workflow.lastSavedAt = new Date().toISOString();
+    render();
+  });
+
+  dom.submitBtn.addEventListener("click", () => {
+    const row = activeRouteEntity();
+    if (!row || !canSubmitCurrentStage(row)) return;
+    applySubmitTransition(row);
+    render();
+  });
+
   dom.validateBtn.addEventListener("click", () => {
     recomputeIssues();
     state.rightPanel.autoHiddenBySection = false;
@@ -2777,6 +3256,42 @@ function initEvents() {
   });
 
   dom.viewRoot.addEventListener("click", (event) => {
+    const decisionBtn = event.target.closest("[data-submit-decision]");
+    if (decisionBtn) {
+      const row = activeRouteEntity();
+      if (!row?.workflow || state.actor.role !== ACTOR_ROLES.APPROVER_2LOD) return;
+      const outcome = dom.viewRoot.querySelector('input[name="decision-outcome"]:checked')?.value || "";
+      const sectionA = state.route.view === "sandbox" ? "sbx-guardrails" : "cet-risk";
+      const sectionB = state.route.view === "sandbox" ? "sbx-evidence" : "cet-financial";
+      const riskComment = String(document.getElementById("decision-comment-a")?.value || "").trim();
+      const finComment = String(document.getElementById("decision-comment-b")?.value || "").trim();
+      const endCommentary = String(document.getElementById("decision-end-commentary")?.value || "").trim();
+      const needsComment = outcome === "accept-caveats" || outcome === "reject";
+      if (!outcome || (needsComment && !(riskComment || finComment || endCommentary))) {
+        window.alert("Select a decision outcome. Caveats/Reject require section and/or end commentary.");
+        return;
+      }
+      row.workflow.lastDecision = outcome;
+      row.workflow.sectionComments = {
+        ...(row.workflow.sectionComments || {}),
+        [sectionA]: riskComment,
+        [sectionB]: finComment
+      };
+      row.workflow.endCommentary = endCommentary;
+      if (outcome === "accept") {
+        row.workflow.stage = WORKFLOW_STAGES.DECISION_ACCEPTED;
+        row.status = "SUCCESS";
+      } else if (outcome === "accept-caveats") {
+        row.workflow.stage = WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER;
+        row.status = "DRAFT";
+      } else {
+        row.workflow.stage = WORKFLOW_STAGES.RETURNED_REWORK_RM;
+        row.status = "DRAFT";
+      }
+      render();
+      return;
+    }
+
     const sortBtn = event.target.closest("[data-sort-key]");
     if (sortBtn) {
       const table = sortBtn.dataset.sortTable;
@@ -2795,6 +3310,17 @@ function initEvents() {
         current.splice(0, current.length);
       }
       state.sorters[table] = current;
+      if (state.tablePage[table] !== undefined) state.tablePage[table] = 1;
+      render();
+      return;
+    }
+
+    const pageBtn = event.target.closest("[data-page-table]");
+    if (pageBtn) {
+      const table = pageBtn.dataset.pageTable;
+      const dir = pageBtn.dataset.pageDir;
+      const currentPage = Number(state.tablePage[table] || 1);
+      state.tablePage[table] = dir === "next" ? currentPage + 1 : Math.max(1, currentPage - 1);
       render();
       return;
     }
@@ -2811,6 +3337,14 @@ function initEvents() {
     if (acOption) {
       state.searchTerm = acOption.dataset.acValue || "";
       render();
+      return;
+    }
+
+    const quickBtn = event.target.closest("[data-quick-view]");
+    if (quickBtn) {
+      state.quickView = quickBtn.dataset.quickView;
+      if (state.route.view !== "home") window.location.hash = PATH.home;
+      else render();
       return;
     }
 
@@ -2898,7 +3432,21 @@ function initEvents() {
     }
   });
 
+  dom.viewRoot.addEventListener("change", (event) => {
+    const target = event.target;
+    if (target.id === "actor-role-select") {
+      state.actor.role = target.value;
+      const row = activeRouteEntity();
+      state.actor.name = currentActorNameForRole(state.actor.role, row);
+      render();
+    }
+  });
+
   dom.createFab?.addEventListener("click", () => {
+    if (state.actor.role === ACTOR_ROLES.APPROVER_2LOD || state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN) {
+      window.alert("Only 1st line roles can initiate CAD/CET/Sandbox.");
+      return;
+    }
     state.openHelpMenu = false;
     dom.helpMenu?.classList.remove("open");
     dom.floatMenu?.classList.toggle("open");
@@ -2923,7 +3471,15 @@ function initEvents() {
   dom.floatMenu?.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-create-type]");
     if (!btn) return;
+    if (state.actor.role === ACTOR_ROLES.APPROVER_2LOD || state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN) {
+      window.alert("Only 1st line roles can initiate CAD/CET/Sandbox.");
+      return;
+    }
     dom.floatMenu.classList.remove("open");
+    if (btn.classList.contains("coming-soon")) {
+      window.alert("Coming Soon");
+      return;
+    }
     if (btn.dataset.createType === "cet") {
       openCreateCetDrawer();
       return;
@@ -2933,13 +3489,31 @@ function initEvents() {
 
   dom.createCetDrawer?.addEventListener("input", (event) => {
     const target = event.target;
-    if (target.id === "create-parent-country") state.createDrawer.draft.parentCountryCadId = target.value;
+    let shouldRerenderDrawer = false;
+    if (target.id === "create-parent-country") {
+      state.createDrawer.draft.parentCountryCadId = target.value;
+      const options = createCetContextOptions(target.value);
+      state.createDrawer.draft.products = state.createDrawer.draft.products.filter((value) => options.products.includes(value));
+      state.createDrawer.draft.clientSegments = state.createDrawer.draft.clientSegments.filter((value) => options.segments.includes(value));
+      shouldRerenderDrawer = true;
+    }
     if (target.id === "create-cet-name") state.createDrawer.draft.name = target.value;
     if (target.id === "create-cet-rationale") state.createDrawer.draft.rationale = target.value;
-    if (target.id === "create-start-date") state.createDrawer.draft.startDate = target.value;
+    if (target.id === "create-start-date") {
+      state.createDrawer.draft.startDate = target.value;
+      shouldRerenderDrawer = true;
+    }
     if (target.id === "create-end-date") state.createDrawer.draft.endDate = target.value;
-    if (target.name === "create-products") state.createDrawer.draft.products = pickValues("create-products");
-    if (target.name === "create-segments") state.createDrawer.draft.clientSegments = pickValues("create-segments");
+    if (target.name === "create-products") {
+      state.createDrawer.draft.products = pickValues("create-products");
+      shouldRerenderDrawer = true;
+    }
+    if (target.name === "create-segments") {
+      state.createDrawer.draft.clientSegments = pickValues("create-segments");
+      shouldRerenderDrawer = true;
+    }
+    state.createDrawer.warnings = createCetWarnings(state.createDrawer.draft);
+    if (shouldRerenderDrawer) renderCreateCetDrawer();
   });
 
   dom.createCetDrawer?.addEventListener("click", (event) => {
@@ -2991,6 +3565,12 @@ function initEvents() {
       state.openHelpMenu = false;
       return;
     }
+    if (btn.classList.contains("coming-soon")) {
+      dom.helpMenu.classList.remove("open");
+      state.openHelpMenu = false;
+      window.alert("Coming Soon");
+      return;
+    }
     const messages = {
       approver: "Find your approver flow placeholder.",
       demo: "Demo mode placeholder.",
@@ -3008,6 +3588,9 @@ function initEvents() {
   window.addEventListener("scroll", () => {
     const detailRoute = state.route.view === "group" || state.route.view === "country" || state.route.view === "cet" || state.route.view === "sandbox";
     dom.backTopFab?.classList.toggle("show", detailRoute && window.scrollY > 260);
+  });
+  window.addEventListener("resize", () => {
+    syncShellLayoutMetrics();
   });
 }
 
@@ -3028,9 +3611,16 @@ async function init() {
   }
   normalizeAllStatuses(state.data);
   seedCets(state.data);
+  ensureWorkflowData(state.data);
+  state.actor.name = state.data.userProfile?.name || "Country RM";
+  state.actor.country = state.data.userProfile?.countries?.[0] || "Singapore";
+  state.actor.region = state.data.userProfile?.cluster || "Regional";
+  state.actor.product = state.data.countryCads?.[0]?.product || "Credit Cards";
+  state.actor.clientSegment = state.data.countryCads?.[0]?.clientSegment || "Retail";
   populateFilters();
   if (!window.location.hash) window.location.hash = PATH.home;
   initEvents();
+  syncShellLayoutMetrics();
   render();
 }
 
