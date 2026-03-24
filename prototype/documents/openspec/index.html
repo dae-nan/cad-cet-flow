@@ -53,7 +53,7 @@
       font-weight: 600;
     }
     main {
-      max-width: 1080px;
+      max-width: min(1500px, 96vw);
       margin: 0 auto;
       padding: 1.15rem;
       display: grid;
@@ -166,7 +166,7 @@
   <header class="topbar">
     <div>
       <h1>Credit Workspace</h1>
-      <p class="breadcrumb">Help / Documentation / OpenSpec</p>
+      <p class="breadcrumb"><a href="../../index.html#/home">Credit Approvals</a> / Help / Documentation / OpenSpec</p>
     </div>
     <div class="top-actions">PRD-First View</div>
   </header>
@@ -174,12 +174,12 @@
   <main>
     <section class="panel prd-main">
       <span class="chip">PRD</span>
-      <h2>Governance Feedback UX Alignment</h2>
-      <p>Main product requirement document for role-stage workflow, access model, Home UX cleanup, Create CET IA, and mobile consistency updates.</p>
-      <p><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/proposal.md">Open PRD (proposal.md)</a></p>
-      <p><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/design.md">Open Design (persona map, journeys, wireframes)</a></p>
-      <p><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/tasks.md">Open Implementation Tasks</a></p>
-      <p><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/evidence-manifest.md">Open Evidence Manifest</a></p>
+      <h2>Credit Approval UX Consistency Phase 2</h2>
+      <p>Main requirement pack for CAD status lifecycle expansion, Home/Inbox parity, Portfolio segment cards, table ordering updates, and form responsiveness fixes.</p>
+      <p><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/proposal.md">Open PRD (proposal.md)</a></p>
+      <p><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/design.md">Open Design</a></p>
+      <p><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/tasks.md">Open Implementation Tasks</a></p>
+      <p><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/evidence-manifest.md">Open Evidence Manifest</a></p>
     </section>
 
     <section class="doc-grid">
@@ -190,7 +190,7 @@
         <div class="persona-filters">
           <button class="filter-btn active" data-persona="all">All</button>
           <button class="filter-btn" data-persona="rm">1st Line RM</button>
-          <button class="filter-btn" data-persona="bp">Business Proposer</button>
+          <button class="filter-btn" data-persona="bp">Proposer</button>
           <button class="filter-btn" data-persona="2lod">Approver</button>
           <button class="filter-btn" data-persona="gov">Governance Admin</button>
         </div>
@@ -200,63 +200,63 @@
             <h4>Unified Stage + Role Header</h4>
             <div class="timeline-meta">Journey: Cross-cutting</div>
             <p>Shows workflow stage, acting role, and saved review feedback context.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/specs/workspace-navigation-context/spec.md">Spec: Workspace Navigation Context</a></div>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/specs/workspace-navigation-context/spec.md">Spec: Workspace Navigation Context</a></div>
           </li>
 
           <li class="timeline-item" data-persona="rm bp">
             <h4>Sequential Submission Gates</h4>
-            <div class="timeline-meta">Journey: Draft -> Business Proposer -> 2nd Line</div>
-            <p>RM submits to Business Proposer first, then Business Proposer submits to 2nd line.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/specs/document-lifecycle-and-actions/spec.md">Spec: Document Lifecycle and Actions</a></div>
+            <div class="timeline-meta">Journey: Draft -> Proposer -> 2nd Line</div>
+            <p>CAD lifecycle now exposes `PROPOSING` and `APPROVING` between draft and active outcomes.</p>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/specs/document-lifecycle-and-actions/spec.md">Spec: Document Lifecycle and Actions</a></div>
           </li>
 
           <li class="timeline-item" data-persona="rm bp 2lod">
-            <h4>Section-Level Edit Boundaries</h4>
-            <div class="timeline-meta">Journey: Draft authoring + review</div>
-            <p>Editability is governed by role + stage + section ownership.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/specs/role-based-access-governance/spec.md">Spec: Role-Based Access Governance</a></div>
+            <h4>Status-Last Table Layout + Ownership Short Labels</h4>
+            <div class="timeline-meta">Journey: Dashboard triage</div>
+            <p>Tables now position Status last and use RM / Proposer / Approver ownership columns.</p>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/specs/cad-detail-information-architecture/spec.md">Spec: CAD Detail Information Architecture</a></div>
           </li>
 
           <li class="timeline-item" data-persona="2lod rm bp">
-            <h4>Decision Panel with Caveats/Reject Commentary</h4>
-            <div class="timeline-meta">Journey: 2nd Line decision + rework loop</div>
-            <p>2nd line can accept, accept with caveats, or reject; caveat/reject requires comments.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/specs/cet-governance-validation/spec.md">Spec: CET Governance Validation</a></div>
+            <h4>Inbox Scope-Centric Filtering</h4>
+            <div class="timeline-meta">Journey: Inbox triage</div>
+            <p>Inbox center controls now filter by My Inbox and Team Inbox, with mobile rail `Me`/`Tm` pills.</p>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/specs/workspace-navigation-context/spec.md">Spec: Workspace Navigation Context</a></div>
           </li>
 
           <li class="timeline-item" data-persona="rm bp 2lod">
-            <h4>Home Filter + Metric Simplification</h4>
+            <h4>Home + Inbox Spacing and Filter Rhythm</h4>
             <div class="timeline-meta">Journey: Home triage</div>
-            <p>Home now uses top quick filters (`All Docs`, `My Docs`, `Alerts`) and status-aware metric cards per selected doc type.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/specs/workspace-navigation-context/spec.md">Spec: Workspace Navigation Context</a></div>
+            <p>Search, metric grid, and filter row sequence is aligned and padding is consistent across parent/sub-filters.</p>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/specs/workspace-navigation-context/spec.md">Spec: Workspace Navigation Context</a></div>
           </li>
 
           <li class="timeline-item" data-persona="rm bp 2lod">
-            <h4>Ownership Clarity in Tables</h4>
-            <div class="timeline-meta">Journey: Dashboard triage</div>
-            <p>Tables use explicit RM / Business Proposer / Approver columns.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/specs/portfolio-monitoring-hierarchy/spec.md">Spec: Portfolio Monitoring Hierarchy</a></div>
+            <h4>Portfolio Segment Exposure Cards</h4>
+            <div class="timeline-meta">Journey: Portfolio monitoring</div>
+            <p>Portfolio cards now show Wealth, Retail, and SME Business Banking amounts, utilization, and trend minis.</p>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/specs/portfolio-monitoring-hierarchy/spec.md">Spec: Portfolio Monitoring Hierarchy</a></div>
           </li>
 
           <li class="timeline-item" data-persona="bp rm">
-            <h4>CAD Information Architecture Reorder</h4>
+            <h4>Full Form Responsiveness (CAD/CET/Sandbox)</h4>
             <div class="timeline-meta">Journey: Group/Country review</div>
-            <p>Summary and Strategy are prioritized before Country CAD lists.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/specs/cad-detail-information-architecture/spec.md">Spec: CAD Detail Information Architecture</a></div>
+            <p>Nested card clipping/scroll traps are removed so values remain visible in desktop and mobile detail forms.</p>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/design.md">Design: Layout and Responsiveness</a></div>
           </li>
 
           <li class="timeline-item" data-persona="rm bp">
-            <h4>Create CET IA + Soft Warnings</h4>
+            <h4>Workflow Timeline Banner</h4>
             <div class="timeline-meta">Journey: CET initiation</div>
-            <p>Create CET is grouped by context/scope/details/timeline, with dynamic product-segment options and non-blocking date/duplicate warnings.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/specs/cet-governance-validation/spec.md">Spec: CET Governance Validation</a></div>
+            <p>Detail banner now renders stage progression as timeline milestones with current-step emphasis.</p>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/design.md">Design: Workflow Timeline</a></div>
           </li>
 
           <li class="timeline-item" data-persona="rm bp 2lod gov">
-            <h4>Quick Actions Coming Soon States</h4>
+            <h4>FAB Reposition for Pagination Safety</h4>
             <div class="timeline-meta">Journey: Quick actions</div>
-            <p>Greyed menu items remain clickable and explicitly respond with “Coming Soon” while active flows remain unchanged.</p>
-            <div class="timeline-links"><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/tasks.md">Tasks: UX Refinements</a></div>
+            <p>Floating action stack sits higher to avoid overlap with table pagination in desktop and mobile screens.</p>
+            <div class="timeline-links"><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/tasks.md">Tasks: UX Refinements</a></div>
           </li>
 
           <li class="timeline-item" data-persona="gov">
@@ -272,10 +272,10 @@
         <span class="chip">Change Package</span>
         <h3>Related Documents</h3>
         <ul class="mini-list">
-          <li><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/proposal.md">PRD / Proposal</a></li>
-          <li><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/design.md">Design (personas + journeys)</a></li>
-          <li><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/tasks.md">Tasks</a></li>
-          <li><a href="viewer.html?doc=changes/governance-feedback-ux-alignment/evidence-manifest.md">Evidence Manifest</a></li>
+          <li><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/proposal.md">PRD / Proposal</a></li>
+          <li><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/design.md">Design</a></li>
+          <li><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/tasks.md">Tasks</a></li>
+          <li><a href="viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/evidence-manifest.md">Evidence Manifest</a></li>
         </ul>
 
         <h3 style="margin-top:1rem;">Legacy Baseline</h3>

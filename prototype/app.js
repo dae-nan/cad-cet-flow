@@ -231,7 +231,7 @@ function filterValues(key) {
 
 function statusSetForType(type) {
   if (type === "group" || type === "country" || type === "GROUP" || type === "COUNTRY") {
-    return ["ACTIVE", "RETIRED", "DRAFT"];
+    return ["DRAFT", "PROPOSING", "APPROVING", "ACTIVE", "RETIRED"];
   }
   if (type === "cet" || type === "sandbox" || type === "CET" || type === "SANDBOX") {
     return ["DRAFT", "INFLIGHT", "SUCCESS", "FAILED"];
@@ -242,10 +242,12 @@ function statusSetForType(type) {
 function normalizeStatus(status, type) {
   const raw = String(status || "").trim().toUpperCase().replace(/\s+/g, "");
   if (type === "cad") {
+    if (raw === "PROPOSING") return "PROPOSING";
+    if (raw === "APPROVING") return "APPROVING";
     if (raw === "ACTIVE") return "ACTIVE";
     if (raw === "RETIRED") return "RETIRED";
     if (raw === "DRAFT") return "DRAFT";
-    if (raw === "INFLIGHT") return "DRAFT";
+    if (raw === "INFLIGHT") return "APPROVING";
     if (raw === "COMPLETED" || raw === "SUCCESS") return "RETIRED";
     if (raw === "FAILED") return "RETIRED";
     return "DRAFT";
@@ -271,13 +273,13 @@ function normalizeAllStatuses(data) {
 function workflowStageLabel(stage) {
   const map = {
     [WORKFLOW_STAGES.DRAFT_RM]: "Draft - RM Working",
-    [WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER]: "Draft - Business Proposer Review",
+    [WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER]: "Draft - Proposer Review",
     [WORKFLOW_STAGES.SUBMITTED_2LOD]: "Submitted to 2nd Line",
     [WORKFLOW_STAGES.DECISION_ACCEPTED]: "2nd Line Decision - Accepted",
     [WORKFLOW_STAGES.DECISION_ACCEPTED_CAVEATS]: "2nd Line Decision - Accepted with Caveats",
     [WORKFLOW_STAGES.DECISION_REJECTED]: "2nd Line Decision - Rejected",
     [WORKFLOW_STAGES.RETURNED_REWORK_RM]: "Returned for Rework - RM",
-    [WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER]: "Returned for Rework - Business Proposer"
+    [WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER]: "Returned for Rework - Proposer"
   };
   return map[stage] || "Draft - RM Working";
 }
@@ -285,14 +287,21 @@ function workflowStageLabel(stage) {
 function actorRoleLabel(role) {
   const map = {
     [ACTOR_ROLES.RM]: "1st Line RM",
-    [ACTOR_ROLES.BUSINESS_PROPOSER]: "Business Proposer",
+    [ACTOR_ROLES.BUSINESS_PROPOSER]: "Proposer",
     [ACTOR_ROLES.APPROVER_2LOD]: "Approver",
     [ACTOR_ROLES.GOVERNANCE_ADMIN]: "Governance Admin"
   };
   return map[role] || role;
 }
 
-function stageFromStatus(status) {
+function stageFromStatus(status, type = "child") {
+  if (type === "cad") {
+    if (status === "PROPOSING") return WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER;
+    if (status === "APPROVING") return WORKFLOW_STAGES.SUBMITTED_2LOD;
+    if (status === "ACTIVE") return WORKFLOW_STAGES.DECISION_ACCEPTED;
+    if (status === "RETIRED") return WORKFLOW_STAGES.DECISION_REJECTED;
+    return WORKFLOW_STAGES.DRAFT_RM;
+  }
   if (status === "INFLIGHT") return WORKFLOW_STAGES.SUBMITTED_2LOD;
   if (status === "SUCCESS") return WORKFLOW_STAGES.DECISION_ACCEPTED;
   if (status === "FAILED") return WORKFLOW_STAGES.DECISION_REJECTED;
@@ -301,7 +310,7 @@ function stageFromStatus(status) {
 
 function defaultParticipants(row) {
   const rm = row.rm || row.owner || "Country RM";
-  const bp = row.businessProposer || `Business Proposer - ${row.country || "Region"}`;
+  const bp = row.businessProposer || `Proposer - ${row.country || "Region"}`;
   const approver = row.approver || row.secondLineApprover || "Approver CCO";
   return {
     rm,
@@ -311,7 +320,7 @@ function defaultParticipants(row) {
   };
 }
 
-function ensureWorkflowRow(row) {
+function ensureWorkflowRow(row, type = "child") {
   const existingParticipants = row.participants || {};
   const participants = {
     ...defaultParticipants(row),
@@ -320,7 +329,7 @@ function ensureWorkflowRow(row) {
   };
   delete participants.secondLineApprover;
   const workflow = row.workflow || {
-    stage: stageFromStatus(row.status),
+    stage: stageFromStatus(row.status, type),
     lastDecision: "",
     sectionComments: {},
     endCommentary: ""
@@ -333,10 +342,10 @@ function ensureWorkflowRow(row) {
 }
 
 function ensureWorkflowData(data) {
-  data.groupCads = data.groupCads.map((row) => ensureWorkflowRow(row));
-  data.countryCads = data.countryCads.map((row) => ensureWorkflowRow(row));
-  data.cets = data.cets.map((row) => ensureWorkflowRow(row));
-  data.sandboxes = data.sandboxes.map((row) => ensureWorkflowRow(row));
+  data.groupCads = data.groupCads.map((row) => ensureWorkflowRow(row, "cad"));
+  data.countryCads = data.countryCads.map((row) => ensureWorkflowRow(row, "cad"));
+  data.cets = data.cets.map((row) => ensureWorkflowRow(row, "child"));
+  data.sandboxes = data.sandboxes.map((row) => ensureWorkflowRow(row, "child"));
 }
 
 function currentActorNameForRole(role, row) {
@@ -385,7 +394,7 @@ function isMyScopeRow(row) {
 }
 
 function isAssignedToMeRow(row) {
-  return isMyScopeRow(row) || row.status === "INFLIGHT";
+  return isMyScopeRow(row) || row.status === "INFLIGHT" || row.status === "APPROVING";
 }
 
 function teamScopeProducts() {
@@ -755,7 +764,7 @@ function ownerBadge(ownerRole) {
     : ownerRole === "BUSINESS_PROPOSER"
       ? "owner-shared"
       : "owner-1lod";
-  const label = ownerRole === "BUSINESS_PROPOSER" ? "Business Proposer" : ownerRole === "2LOD" ? "2LOD" : "RM";
+  const label = ownerRole === "BUSINESS_PROPOSER" ? "Proposer" : ownerRole === "2LOD" ? "2LOD" : "RM";
   return `<span class="owner-badge ${cls}">${label}</span>`;
 }
 
@@ -785,7 +794,7 @@ function canSubmitCurrentStage(row) {
 
 function submitButtonText(row) {
   const stage = row?.workflow?.stage;
-  if (stage === WORKFLOW_STAGES.DRAFT_RM || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM) return "Submit to Business Proposer";
+  if (stage === WORKFLOW_STAGES.DRAFT_RM || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM) return "Submit to Proposer";
   if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) return "Submit to 2nd Line";
   return "Submit";
 }
@@ -798,16 +807,29 @@ function renderWorkflowBanner(row) {
   if (!row) return "";
   const comments = row.workflow?.sectionComments || {};
   const commentEntries = Object.entries(comments).filter(([, value]) => String(value || "").trim());
+  const timeline = [
+    { key: WORKFLOW_STAGES.DRAFT_RM, label: "Draft" },
+    { key: WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER, label: "Proposing" },
+    { key: WORKFLOW_STAGES.SUBMITTED_2LOD, label: "Approving" },
+    { key: WORKFLOW_STAGES.DECISION_ACCEPTED, label: "Active" }
+  ];
+  const currentIndex = Math.max(
+    0,
+    timeline.findIndex((step) => step.key === row.workflow?.stage)
+  );
   return `<section class="card workflow-banner">
     <div class="panel-head">
       <h3>Stage: ${workflowStageLabel(row.workflow?.stage)}</h3>
       <div class="stage-role">Role: ${roleContextText()}</div>
     </div>
+    <ol class="workflow-timeline">
+      ${timeline.map((step, idx) => `<li class="workflow-step ${idx < currentIndex ? "done" : idx === currentIndex ? "current" : ""}">${step.label}</li>`).join("")}
+    </ol>
     <div class="table-filter-row">
       <label for="actor-role-select">Acting as</label>
       <select id="actor-role-select">
         <option value="${ACTOR_ROLES.RM}" ${state.actor.role === ACTOR_ROLES.RM ? "selected" : ""}>1st Line RM</option>
-        <option value="${ACTOR_ROLES.BUSINESS_PROPOSER}" ${state.actor.role === ACTOR_ROLES.BUSINESS_PROPOSER ? "selected" : ""}>Business Proposer</option>
+        <option value="${ACTOR_ROLES.BUSINESS_PROPOSER}" ${state.actor.role === ACTOR_ROLES.BUSINESS_PROPOSER ? "selected" : ""}>Proposer</option>
         <option value="${ACTOR_ROLES.APPROVER_2LOD}" ${state.actor.role === ACTOR_ROLES.APPROVER_2LOD ? "selected" : ""}>Approver</option>
         <option value="${ACTOR_ROLES.GOVERNANCE_ADMIN}" ${state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN ? "selected" : ""}>Governance Admin</option>
       </select>
@@ -820,14 +842,15 @@ function renderWorkflowBanner(row) {
 
 function applySubmitTransition(row) {
   if (!row?.workflow) return;
+  const isCad = state.route.view === "group" || state.route.view === "country";
   if (row.workflow.stage === WORKFLOW_STAGES.DRAFT_RM || row.workflow.stage === WORKFLOW_STAGES.RETURNED_REWORK_RM) {
     row.workflow.stage = WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER;
-    row.status = "DRAFT";
+    row.status = isCad ? "PROPOSING" : "DRAFT";
     return;
   }
   if (row.workflow.stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || row.workflow.stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) {
     row.workflow.stage = WORKFLOW_STAGES.SUBMITTED_2LOD;
-    row.status = "INFLIGHT";
+    row.status = isCad ? "APPROVING" : "INFLIGHT";
   }
 }
 
@@ -1159,6 +1182,8 @@ function statusTag(status) {
   const label = normalized === "INFLIGHT" ? "INFLIGHT" : normalized;
   const clsMap = {
     DRAFT: "tag-draft",
+    PROPOSING: "tag-proposing",
+    APPROVING: "tag-approving",
     ACTIVE: "tag-active",
     RETIRED: "tag-retired",
     INFLIGHT: "tag-inflight",
@@ -1189,7 +1214,7 @@ function ownerAvatarCell(owner) {
 function participantCell(row, key) {
   const participants = row.participants || defaultParticipants(row);
   const name = participants[key] || "-";
-  return ownerCell(name);
+  return `<span title="${name}">${ownerCell(name)}</span>`;
 }
 
 function typeMeta(type) {
@@ -1263,6 +1288,16 @@ function legalEntityTag(row) {
 }
 
 function rowComparable(row, key) {
+  const statusRank = (status) => {
+    const id = String(row.id || "").toUpperCase();
+    const type = String(row.type || "").toUpperCase();
+    const isCad = type === "GROUP" || type === "COUNTRY" || id.startsWith("G-CAD") || id.startsWith("C-CAD");
+    const cadOrder = ["DRAFT", "PROPOSING", "APPROVING", "ACTIVE", "RETIRED"];
+    const childOrder = ["DRAFT", "INFLIGHT", "SUCCESS", "FAILED"];
+    const order = isCad ? cadOrder : childOrder;
+    const idx = order.indexOf(String(status || "").toUpperCase());
+    return idx >= 0 ? idx : 99;
+  };
   if (key === "type") {
     const order = { GROUP: 1, COUNTRY: 2, CET: 3, SANDBOX: 4 };
     return order[String(row.type || "").toUpperCase()] || 99;
@@ -1271,8 +1306,8 @@ function rowComparable(row, key) {
   if (key === "rm") return (row.participants || {}).rm || "";
   if (key === "businessProposer") return (row.participants || {}).businessProposer || "";
   if (key === "approver") return (row.participants || {}).approver || "";
-  if (key === "status") return row.status || "";
-  if (key === "inboxStatus") return inboxStatusFor(row);
+  if (key === "status") return statusRank(row.status);
+  if (key === "inboxStatus") return statusRank(inboxStatusFor(row));
   if (key === "utilization") {
     const exp = Number(row.exposure || 0);
     const lim = Number(row.cap || row.limit || 1);
@@ -1362,7 +1397,7 @@ function renderColumnsToggle(tableKey) {
   if (tableKey === "portfolio") {
     const options = [
       { key: "rm", label: "RM" },
-      { key: "businessProposer", label: "Business Proposer" },
+      { key: "businessProposer", label: "Proposer" },
       { key: "approver", label: "Approver" },
       { key: "legalEntity", label: "Legal Entity" },
       { key: "id", label: "ID" }
@@ -1474,7 +1509,7 @@ function renderHierarchyTable() {
   const orderedOptional = state.portfolioColumnOrder.filter((k) => cols[k] && k !== "type");
   const optionalLabel = {
     rm: "RM",
-    businessProposer: "Business Proposer",
+    businessProposer: "Proposer",
     approver: "Approver",
     legalEntity: "Legal Entity",
     id: "ID"
@@ -1695,18 +1730,14 @@ function renderLeftPanel() {
     <div class="side-head-row"><h2>Context</h2><button id="left-toggle" class="collapse-btn" aria-label="Collapse menu">${navIcon("menu")}</button></div>
     ${pagesGroup}
     <div class="menu-group">
-      <p class="menu-title">Inbox Scope</p>
-      <button class="menu-item ${state.inboxScope === "my" ? "active" : ""}" data-inbox-scope="my">My Inbox <span class="mini-badge">${assignedToMeCount}</span></button>
-      <button class="menu-item ${state.inboxScope === "team" ? "active" : ""}" data-inbox-scope="team">Team Inbox <span class="mini-badge">${assignedToTeamCount}</span></button>
-    </div>
-    <div class="menu-group">
       <p class="menu-title">Document Filters</p>
       ${inboxTypeMeta.map((meta) => {
         const typeRows = inboxDocs.filter((row) => row.type === meta.key);
         const parentOn = state.inboxType === meta.key && state.inboxStatus === "all";
         const statusOpen = state.inboxType === meta.key;
+        const icon = { GROUP: "group", COUNTRY: "country", CET: "cet", SANDBOX: "sandbox" }[meta.key] || "file";
         return `<div class="side-group">
-          <button class="menu-item ${parentOn ? "active" : ""}" data-inbox-type="${meta.key}" data-inbox-status="all">${meta.label} <span class="mini-badge">${typeRows.length}</span></button>
+          <button class="menu-item with-icon ${parentOn ? "active" : ""}" data-inbox-type="${meta.key}" data-inbox-status="all">${navIcon(icon)} <span>${meta.label} <span class="mini-badge">${typeRows.length}</span></span></button>
           <div class="side-rows ${statusOpen ? "open" : "closed"}">
             ${meta.statuses.map((status) => {
               const count = typeRows.filter((row) => inboxStatusFor(row) === status).length;
@@ -1736,15 +1767,30 @@ function renderLeftPanel() {
       <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("inbox")}</a>
       <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("portfolio")}</a>
       <span class="icon-separator"></span>
-      <button class="icon-pill has-tooltip ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="ACTIVE" aria-label="Group CADs" data-tooltip="Group CADs">${navIcon("group")}</button>
-      <button class="icon-pill has-tooltip ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="ACTIVE" aria-label="Country CADs" data-tooltip="Country CADs">${navIcon("country")}</button>
-      <button class="icon-pill has-tooltip ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="INFLIGHT" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>      
-      <button class="icon-pill has-tooltip ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="INFLIGHT" aria-label="Sandboxes" data-tooltip="Sandboxes">${navIcon("sandbox")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "group" ? "active" : ""}" data-home-type="group" data-home-status="all" aria-label="Group CADs" data-tooltip="Group CADs">${navIcon("group")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "country" ? "active" : ""}" data-home-type="country" data-home-status="all" aria-label="Country CADs" data-tooltip="Country CADs">${navIcon("country")}</button>
+      <button class="icon-pill has-tooltip ${state.homeType === "cet" ? "active" : ""}" data-home-type="cet" data-home-status="all" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>      
+      <button class="icon-pill has-tooltip ${state.homeType === "sandbox" ? "active" : ""}" data-home-type="sandbox" data-home-status="all" aria-label="Sandboxes" data-tooltip="Sandboxes">${navIcon("sandbox")}</button>
       <span class="icon-separator"></span>
       <button class="icon-pill has-tooltip ${state.quickView === "none" ? "active" : ""}" data-quick-view="none" aria-label="All Docs" data-tooltip="All Docs">${navIcon("all")}</button>
       <button class="icon-pill has-tooltip ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs" aria-label="My Docs" data-tooltip="My Docs">${navIcon("mine")}</button>
       <button class="icon-pill has-tooltip ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts" aria-label="Governance Alerts" data-tooltip="Governance Alerts">${navIcon("alert")}</button>
       ${r.view !== "home" ? `<span class="icon-pill has-tooltip active" aria-label="Opened document" data-tooltip="Opened document">${navIcon("file")}</span>` : ""}
+    </div>`;
+  const collapsedInbox = `
+    <div class="icon-rail">
+      <button id="left-toggle" class="icon-pill has-tooltip" aria-label="Expand menu" data-tooltip="Expand menu">${navIcon("menu")}</button>
+      <a class="icon-pill has-tooltip ${r.view === "home" ? "active" : ""}" href="${PATH.home}" aria-label="Credit Approvals" data-tooltip="Credit Approvals">${navIcon("home")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "inbox" ? "active" : ""}" href="${PATH.inbox}" aria-label="Inbox" data-tooltip="Inbox">${navIcon("inbox")}</a>
+      <a class="icon-pill has-tooltip ${r.view === "portfolio" ? "active" : ""}" href="${PATH.portfolio}" aria-label="Portfolio Monitoring" data-tooltip="Portfolio Monitoring">${navIcon("portfolio")}</a>
+      <span class="icon-separator"></span>
+      <button class="icon-pill has-tooltip ${state.inboxType === "GROUP" ? "active" : ""}" data-inbox-type="GROUP" data-inbox-status="all" aria-label="Group CADs" data-tooltip="Group CADs">${navIcon("group")}</button>
+      <button class="icon-pill has-tooltip ${state.inboxType === "COUNTRY" ? "active" : ""}" data-inbox-type="COUNTRY" data-inbox-status="all" aria-label="Country CADs" data-tooltip="Country CADs">${navIcon("country")}</button>
+      <button class="icon-pill has-tooltip ${state.inboxType === "CET" ? "active" : ""}" data-inbox-type="CET" data-inbox-status="all" aria-label="CETs" data-tooltip="CETs">${navIcon("cet")}</button>
+      <button class="icon-pill has-tooltip ${state.inboxType === "SANDBOX" ? "active" : ""}" data-inbox-type="SANDBOX" data-inbox-status="all" aria-label="Sandboxes" data-tooltip="Sandboxes">${navIcon("sandbox")}</button>
+      <span class="icon-separator"></span>
+      <button class="icon-pill has-tooltip ${state.inboxScope === "my" ? "active" : ""}" data-inbox-scope="my" aria-label="My Inbox" data-tooltip="My Inbox">Me</button>
+      <button class="icon-pill has-tooltip ${state.inboxScope === "team" ? "active" : ""}" data-inbox-scope="team" aria-label="Team Inbox" data-tooltip="Team Inbox">Tm</button>
     </div>`;
   const collapsedMinimal = `
     <div class="icon-rail">
@@ -1769,7 +1815,7 @@ function renderLeftPanel() {
 
   const isCollapsed = dom.leftPanel.classList.contains("collapsed");
   dom.leftPanel.innerHTML = isCollapsed
-    ? (r.view === "home" ? collapsedHome : r.view === "portfolio" ? collapsedPortfolio : collapsedMinimal)
+    ? (r.view === "home" ? collapsedHome : r.view === "inbox" ? collapsedInbox : r.view === "portfolio" ? collapsedPortfolio : collapsedMinimal)
     : (r.view === "home" ? homeExpanded : r.view === "inbox" ? inboxExpanded : r.view === "portfolio" ? portfolioExpanded : detailExpanded);
 
   const btn = document.getElementById("left-toggle");
@@ -1857,13 +1903,13 @@ function renderHome() {
     <td class="key-col"><a href="${openHrefForRow(r, state.homeType)}">${r.name}</a><div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
     ${cols.id ? `<td>${r.id}</td>` : ""}
     ${cols.legalEntity ? `<td>${r.legalEntity || "-"}</td>` : ""}
-    <td>${countryCell(r.country)}</td><td>${r.product}</td><td>${r.clientSegment || "-"}</td><td>${statusTag(r.status)}</td><td>${participantCell(r, "rm")}</td><td>${participantCell(r, "businessProposer")}</td><td>${participantCell(r, "approver")}</td>
+    <td>${countryCell(r.country)}</td><td>${r.product}</td><td>${r.clientSegment || "-"}</td><td>${participantCell(r, "rm")}</td><td>${participantCell(r, "businessProposer")}</td><td>${participantCell(r, "approver")}</td><td>${statusTag(r.status)}</td>
   </tr>`).join("");
 
   const metricRows = rows[state.homeType];
   const statusCardsByType = {
-    group: ["ACTIVE", "RETIRED", "DRAFT"],
-    country: ["ACTIVE", "RETIRED", "DRAFT"],
+    group: ["DRAFT", "PROPOSING", "APPROVING", "ACTIVE", "RETIRED"],
+    country: ["DRAFT", "PROPOSING", "APPROVING", "ACTIVE", "RETIRED"],
     cet: ["DRAFT", "INFLIGHT", "SUCCESS", "FAILED"],
     sandbox: ["DRAFT", "INFLIGHT", "SUCCESS", "FAILED"]
   };
@@ -1890,10 +1936,10 @@ function renderHome() {
           ${sortableTh("home", "country", "Country")}
           ${sortableTh("home", "product", "Product")}
           ${sortableTh("home", "clientSegment", "Segment")}
-          ${sortableTh("home", "status", "Status")}
           <th>RM</th>
-          <th>Business Proposer</th>
-          <th>Approver</th></tr></thead>
+          <th>Proposer</th>
+          <th>Approver</th>
+          ${sortableTh("home", "status", "Status")}</tr></thead>
         <tbody>${selectedTable || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
       </table>
       ${renderPagination("home", selectedPaging)}
@@ -1941,6 +1987,20 @@ function renderInbox() {
     governanceAlerts: rows.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length,
     closed: rows.filter((x) => ["SUCCESS", "FAILED", "RETIRED"].includes(inboxStatusFor(x))).length
   };
+  const statusMetricType = state.inboxType === "all" ? null : state.inboxType.toLowerCase();
+  const statusMetrics = statusMetricType
+    ? statusSetForType(statusMetricType).map((status) => ({
+      label: status,
+      value: rows.filter((x) => x.type === state.inboxType && inboxStatusFor(x) === status).length
+    }))
+    : [];
+  const metricHtml = statusMetricType
+    ? `${statusMetrics.map((card) => `<div class="metric"><span>${card.label}</span><strong>${card.value}</strong></div>`).join("")}
+       <div class="metric"><span>Governance Alerts</span><strong>${counts.governanceAlerts}</strong></div>`
+    : `<div class="metric"><span>My Docs</span><strong>${counts.myScope}</strong></div>
+       <div class="metric"><span>Inflight</span><strong>${counts.inflight}</strong></div>
+       <div class="metric"><span>Governance Alerts</span><strong>${counts.governanceAlerts}</strong></div>
+       <div class="metric"><span>Closed</span><strong>${counts.closed}</strong></div>`;
   const tableRows = inboxPaging.rows.map((r) => `<tr>
     <td class="key-col"><a href="${openHrefForRow(r, r.type.toLowerCase())}">${r.name}</a><div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
     <td>${r.type}</td>
@@ -1949,10 +2009,10 @@ function renderInbox() {
     <td>${countryCell(r.country)}</td>
     <td>${r.product}</td>
     <td>${r.clientSegment || "-"}</td>
-    <td>${statusTag(inboxStatusFor(r))}</td>
     <td>${participantCell(r, "rm")}</td>
     <td>${participantCell(r, "businessProposer")}</td>
     <td>${participantCell(r, "approver")}</td>
+    <td>${statusTag(inboxStatusFor(r))}</td>
   </tr>`).join("");
 
   dom.viewRoot.innerHTML = `
@@ -1963,16 +2023,12 @@ function renderInbox() {
         <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / RM / Country" />
         <button class="btn secondary small" data-action="reset-search">Reset</button>
       </div>
-      <div class="table-filter-row">
-        <button class="btn secondary small ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
-        <button class="btn secondary small ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
-        <button class="btn secondary small ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts</button>
-      </div>
       <div class="metric-grid">
-        <div class="metric"><span>My Docs</span><strong>${counts.myScope}</strong></div>
-        <div class="metric"><span>Inflight</span><strong>${counts.inflight}</strong></div>
-        <div class="metric"><span>Governance Alerts</span><strong>${counts.governanceAlerts}</strong></div>
-        <div class="metric"><span>Closed</span><strong>${counts.closed}</strong></div>
+        ${metricHtml}
+      </div>
+      <div class="table-filter-row">
+        <button class="btn secondary small ${state.inboxScope === "my" ? "active" : ""}" data-inbox-scope="my">My Inbox</button>
+        <button class="btn secondary small ${state.inboxScope === "team" ? "active" : ""}" data-inbox-scope="team">Team Inbox</button>
       </div>
     </section>
     <section class="card">
@@ -1989,10 +2045,10 @@ function renderInbox() {
           ${sortableTh("inbox", "country", "Country")}
           ${sortableTh("inbox", "product", "Product")}
           ${sortableTh("inbox", "clientSegment", "Segment")}
-          ${sortableTh("inbox", "inboxStatus", "Status")}
           <th>RM</th>
-          <th>Business Proposer</th>
-          <th>Approver</th></tr></thead>
+          <th>Proposer</th>
+          <th>Approver</th>
+          ${sortableTh("inbox", "inboxStatus", "Status")}</tr></thead>
         <tbody>${tableRows || `<tr><td colspan="${11 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
       </table>
       ${renderPagination("inbox", inboxPaging)}
@@ -2009,22 +2065,29 @@ function renderPortfolio() {
     ...state.data.cets,
     ...state.data.sandboxes
   ]);
-  const inflightCount = allRows.filter((x) => x.status === "INFLIGHT").length;
-  const governanceCount = allRows.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
-  const closedCount = allRows.filter((x) => ["SUCCESS", "FAILED", "RETIRED"].includes(x.status)).length;
+  const segmentGroups = [
+    { label: "Wealth", match: (x) => String(x.clientSegment || "").toUpperCase().includes("WEALTH") },
+    { label: "Retail", match: (x) => String(x.clientSegment || "").toUpperCase().includes("RETAIL") },
+    { label: "SME Business Banking", match: (x) => {
+      const seg = String(x.clientSegment || "").toUpperCase();
+      return seg.includes("SME") || seg.includes("BUSINESS BANKING");
+    } }
+  ];
+  const segmentCards = segmentGroups.map((segment) => {
+    const rows = allRows.filter(segment.match);
+    const amount = rows.reduce((sum, row) => sum + Number(row.exposure || 0), 0);
+    const cap = rows.reduce((sum, row) => sum + Math.max(1, Number(row.cap || row.limit || 1)), 0);
+    const utilization = cap ? Math.round((amount / cap) * 100) : 0;
+    const miniBars = rows.slice(0, 6).map((row) => Math.round((Number(row.exposure || 0) / Math.max(1, Number(row.cap || 1))) * 100));
+    return { label: segment.label, amount, utilization, miniBars };
+  });
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Portfolio Monitoring</h2>
-      <p class="warning-note">Portfolio Monitoring is an experimental feature and currently out of scope.</p>
       <div class="main-search-row">
         <label for="main-search">Search</label>
         <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / RM / Country" />
         <button class="btn secondary small" data-action="reset-search">Reset</button>
-      </div>
-      <div class="table-filter-row">
-        <button class="btn secondary small ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
-        <button class="btn secondary small ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
-        <button class="btn secondary small ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Governance Alerts</button>
       </div>
       <div class="table-filter-row portfolio-filter-row">
         ${renderTagMultiSelect("country", "Country")}
@@ -2033,10 +2096,7 @@ function renderPortfolio() {
         <button class="btn secondary small portfolio-clear-btn" data-action="reset-table-filters">Clear</button>
       </div>
       <div class="metric-grid">
-        <div class="metric"><span>My Docs</span><strong>${allRows.length}</strong></div>
-        <div class="metric"><span>Inflight</span><strong>${inflightCount}</strong></div>
-        <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
-        <div class="metric"><span>Closed</span><strong>${closedCount}</strong></div>
+        ${segmentCards.map((card) => `<div class="metric metric-segment"><span>${card.label}</span><strong>$${card.amount.toFixed(1)}m</strong><small>Utilization ${card.utilization}%</small><div class="metric-mini-chart">${card.miniBars.map((v) => `<i style="height:${Math.max(10, Math.min(100, v))}%"></i>`).join("")}</div></div>`).join("")}
       </div>
     </section>
     <section class="card">
@@ -2048,7 +2108,7 @@ function renderPortfolio() {
           ${renderColumnsToggle("portfolio")}
         </div>
       </div>
-      <p class="muted">Filters Applied: Type=${state.homeType.toUpperCase()}${state.homeStatus !== "all" ? ` | Status=${state.homeStatus.toUpperCase()}` : ""}${filterValues("country").length ? ` | Country=${filterValues("country").join(", ")}` : ""}${filterValues("clientSegment").length ? ` | Segment=${filterValues("clientSegment").join(", ")}` : ""}${filterValues("product").length ? ` | Product=${filterValues("product").join(", ")}` : ""}${state.searchTerm ? ` | Search=\"${state.searchTerm}\"` : ""}</p>
+      <p class="muted">Filters Applied: Type=${state.portfolioType.toUpperCase()}${state.homeStatus !== "all" ? ` | Status=${state.homeStatus.toUpperCase()}` : ""}${filterValues("country").length ? ` | Country=${filterValues("country").join(", ")}` : ""}${filterValues("clientSegment").length ? ` | Segment=${filterValues("clientSegment").join(", ")}` : ""}${filterValues("product").length ? ` | Product=${filterValues("product").join(", ")}` : ""}${state.searchTerm ? ` | Search=\"${state.searchTerm}\"` : ""}</p>
       ${renderHierarchyTable()}
     </section>
   `;
@@ -2073,7 +2133,7 @@ function renderGroupDetail() {
   const sortedRows = sortRows(rowData, "groupDetail");
   const groupDetailPaging = paginateRows(sortedRows, "groupDetail");
   const rows = groupDetailPaging.rows.map((c) =>
-    `<tr><td class="key-col"><a href="${PATH.country(group.id, c.country, c.id)}">${c.name}</a><div>${idTag(c.id)}${legalEntityTag(c)}</div></td>${cols.id ? `<td>${c.id}</td>` : ""}${cols.legalEntity ? `<td>${c.legalEntity || "-"}</td>` : ""}<td>${statusTag(c.status)}</td><td>${c.cetsCount}</td><td>${c.sandboxesCount}</td><td>${participantCell(c, "rm")}</td><td>${participantCell(c, "businessProposer")}</td><td>${participantCell(c, "approver")}</td></tr>`
+    `<tr><td class="key-col"><a href="${PATH.country(group.id, c.country, c.id)}">${c.name}</a><div>${idTag(c.id)}${legalEntityTag(c)}</div></td>${cols.id ? `<td>${c.id}</td>` : ""}${cols.legalEntity ? `<td>${c.legalEntity || "-"}</td>` : ""}<td>${c.cetsCount}</td><td>${c.sandboxesCount}</td><td>${participantCell(c, "rm")}</td><td>${participantCell(c, "businessProposer")}</td><td>${participantCell(c, "approver")}</td><td>${statusTag(c.status)}</td></tr>`
   ).join("");
   const readOnly = isReadOnlyCadStatus(group.status);
   const groupHeader = `<div class="descriptions-bordered top-detail-grid">
@@ -2102,7 +2162,7 @@ function renderGroupDetail() {
         { label: "Product", value: `<span data-summary-value="group-product">${group.product || "-"}</span>` },
         { label: "Client Segment", value: `<span data-summary-value="group-segment">${group.clientSegment || "-"}</span>` },
         { label: "RM", value: (group.participants || {}).rm || group.owner || "-" },
-        { label: "Business Proposer", value: (group.participants || {}).businessProposer || "-" },
+        { label: "Proposer", value: (group.participants || {}).businessProposer || "-" },
         { label: "Approver", value: (group.participants || {}).approver || "-" },
         { label: "Legal Entity", value: group.legalEntity || "-" }
       ])}
@@ -2112,7 +2172,7 @@ function renderGroupDetail() {
       { label: "Product", value: group.product },
       { label: "Client Segment", value: group.clientSegment },
       { label: "RM", value: (group.participants || {}).rm || group.owner || "-" },
-      { label: "Business Proposer", value: (group.participants || {}).businessProposer || "-" },
+      { label: "Proposer", value: (group.participants || {}).businessProposer || "-" },
       { label: "Approver", value: (group.participants || {}).approver || "-" },
       { label: "Legal Entity", value: group.legalEntity || "-" }
     ])}`
@@ -2151,12 +2211,12 @@ function renderGroupDetail() {
           ${sortableTh("groupDetail", "name", "Name", "key-col")}
           ${cols.id ? sortableTh("groupDetail", "id", "ID") : ""}
           ${cols.legalEntity ? sortableTh("groupDetail", "legalEntity", "Legal Entity") : ""}
-          ${sortableTh("groupDetail", "status", "Status")}
           ${sortableTh("groupDetail", "cetsCount", "CETs")}
           ${sortableTh("groupDetail", "sandboxesCount", "Sandboxes")}
           <th>RM</th>
-          <th>Business Proposer</th>
-          <th>Approver</th></tr></thead>
+          <th>Proposer</th>
+          <th>Approver</th>
+          ${sortableTh("groupDetail", "status", "Status")}</tr></thead>
         <tbody>${rows || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No country CADs</td></tr>`}</tbody>
       </table>
       ${renderPagination("groupDetail", groupDetailPaging)}
@@ -2195,7 +2255,7 @@ function renderCountryDetail() {
         { label: "Product", value: countryCad.product },
         { label: "Client Segment", value: countryCad.clientSegment },
         { label: "RM", value: (countryCad.participants || {}).rm || countryCad.owner || "-" },
-        { label: "Business Proposer", value: (countryCad.participants || {}).businessProposer || "-" },
+        { label: "Proposer", value: (countryCad.participants || {}).businessProposer || "-" },
         { label: "Approver", value: (countryCad.participants || {}).approver || "-" },
         { label: "Legal Entity", value: countryCad.legalEntity || "-" },
         { label: "Summary", value: `<span data-summary-value="country-summary">-</span>` }
@@ -2207,7 +2267,7 @@ function renderCountryDetail() {
       { label: "Product", value: countryCad.product },
       { label: "Client Segment", value: countryCad.clientSegment },
       { label: "RM", value: (countryCad.participants || {}).rm || countryCad.owner || "-" },
-      { label: "Business Proposer", value: (countryCad.participants || {}).businessProposer || "-" },
+      { label: "Proposer", value: (countryCad.participants || {}).businessProposer || "-" },
       { label: "Approver", value: (countryCad.participants || {}).approver || "-" },
       { label: "Legal Entity", value: countryCad.legalEntity || "-" }
     ])}`
@@ -2227,7 +2287,7 @@ function renderCountryDetail() {
     ...sandboxes.map((x) => ({ type: "SANDBOX", ...x }))
   ], "countryDetail");
   const countryDetailPaging = paginateRows(childRowsSorted, "countryDetail");
-  const childRowsHtml = countryDetailPaging.rows.map((x) => `<tr><td class="key-col"><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">${x.name}</a><div>${idTag(x.id)}${legalEntityTag(x)}</div></td><td>${x.type}</td>${cols.id ? `<td>${x.id}</td>` : ""}${cols.legalEntity ? `<td>${x.legalEntity || "-"}</td>` : ""}<td>${x.clientSegment || "-"}</td><td>${statusTag(x.status)}</td><td>${participantCell(x, "rm")}</td><td>${participantCell(x, "businessProposer")}</td><td>${participantCell(x, "approver")}</td></tr>`).join("");
+  const childRowsHtml = countryDetailPaging.rows.map((x) => `<tr><td class="key-col"><a href="${PATH.detail(countryCad.groupCadId, countryCad.country, countryCad.id, x.id)}">${x.name}</a><div>${idTag(x.id)}${legalEntityTag(x)}</div></td><td>${x.type}</td>${cols.id ? `<td>${x.id}</td>` : ""}${cols.legalEntity ? `<td>${x.legalEntity || "-"}</td>` : ""}<td>${x.clientSegment || "-"}</td><td>${participantCell(x, "rm")}</td><td>${participantCell(x, "businessProposer")}</td><td>${participantCell(x, "approver")}</td><td>${statusTag(x.status)}</td></tr>`).join("");
   dom.viewRoot.innerHTML = `
     ${workflowBanner}
     ${readOnly ? `<section class="card" id="cad-overview"><h2>Country CAD Detail</h2>${overviewContent}
@@ -2255,10 +2315,10 @@ function renderCountryDetail() {
           ${cols.id ? sortableTh("countryDetail", "id", "ID") : ""}
           ${cols.legalEntity ? sortableTh("countryDetail", "legalEntity", "Legal Entity") : ""}
           ${sortableTh("countryDetail", "clientSegment", "Segment")}
-          ${sortableTh("countryDetail", "status", "Status")}
           <th>RM</th>
-          <th>Business Proposer</th>
-          <th>Approver</th></tr></thead>
+          <th>Proposer</th>
+          <th>Approver</th>
+          ${sortableTh("countryDetail", "status", "Status")}</tr></thead>
         <tbody>
           ${childRowsHtml || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No child tests</td></tr>`}
         </tbody>
@@ -2987,7 +3047,7 @@ function createCetFromDraft() {
     issues: [],
     participants: {
       rm: state.data.userProfile?.name || "Country RM",
-      businessProposer: `Business Proposer - ${countryCad.country || "Region"}`,
+      businessProposer: `Proposer - ${countryCad.country || "Region"}`,
       approver: "Approver CCO",
       governanceAdmin: "Governance Ops"
     },
@@ -3096,7 +3156,10 @@ function render() {
     const allowed = statusSetForType(state.homeType);
     if (allowed.length && !allowed.includes(state.homeStatus)) state.homeStatus = allowed[0];
   }
-  if (state.route.view === "portfolio") state.homeStatus = "all";
+  if (state.route.view === "portfolio") {
+    state.homeStatus = "all";
+    state.quickView = "none";
+  }
   if (routeChanged) {
     state.mobileSectionsOpen = false;
     state.mobileTraceOpen = state.route.view !== "home";
@@ -3337,6 +3400,16 @@ function initEvents() {
     if (acOption) {
       state.searchTerm = acOption.dataset.acValue || "";
       render();
+      return;
+    }
+
+    const inboxScopeBtn = event.target.closest("[data-inbox-scope]");
+    if (inboxScopeBtn) {
+      state.inboxScope = inboxScopeBtn.dataset.inboxScope || "my";
+      state.inboxType = "all";
+      state.inboxStatus = "all";
+      if (state.route.view !== "inbox") window.location.hash = PATH.inbox;
+      else render();
       return;
     }
 
