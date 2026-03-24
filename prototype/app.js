@@ -803,28 +803,68 @@ function roleContextText() {
   return `${actorRoleLabel(state.actor.role)} (${state.actor.region}, ${state.actor.product}, ${state.actor.clientSegment})`;
 }
 
+function renderViewSubheading(text) {
+  return `<p class="view-subheading">${text}</p>`;
+}
+
+function workflowTimelineItems(row) {
+  const isCad = state.route.view === "group" || state.route.view === "country";
+  if (isCad) {
+    const items = [
+      { key: WORKFLOW_STAGES.DRAFT_RM, label: "Draft" },
+      { key: WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER, label: "Proposing" },
+      { key: WORKFLOW_STAGES.SUBMITTED_2LOD, label: "Approving" },
+      { key: WORKFLOW_STAGES.DECISION_ACCEPTED, label: "Active" }
+    ];
+    const currentIndex = Math.max(0, items.findIndex((step) => step.key === row.workflow?.stage));
+    return items.map((step, idx) => ({
+      label: step.label,
+      state: idx < currentIndex ? "done" : idx === currentIndex ? "current" : "pending"
+    }));
+  }
+
+  const stageItems = [
+    { key: WORKFLOW_STAGES.DRAFT_RM, label: "Draft" },
+    { key: WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER, label: "Proposing" },
+    { key: WORKFLOW_STAGES.SUBMITTED_2LOD, label: "Approving" }
+  ];
+  const terminalStatus = String(row.status || "").toUpperCase();
+  if (terminalStatus === "SUCCESS" || terminalStatus === "FAILED") {
+    return [
+      ...stageItems.map((step) => ({ label: step.label, state: "done" })),
+      { label: terminalStatus === "SUCCESS" ? "Outcome: Success" : "Outcome: Failed", state: terminalStatus === "SUCCESS" ? "terminal-success" : "terminal-failed" }
+    ];
+  }
+
+  const currentIndex = Math.max(0, stageItems.findIndex((step) => step.key === row.workflow?.stage));
+  return [
+    ...stageItems.map((step, idx) => ({
+      label: step.label,
+      state: idx < currentIndex ? "done" : idx === currentIndex ? "current" : "pending"
+    })),
+    { label: "Outcome", state: "pending" }
+  ];
+}
+
+function renderWorkflowTimeline(row) {
+  return `<ul class="workflow-timeline" aria-label="Workflow timeline">
+    ${workflowTimelineItems(row).map((item) => `<li class="workflow-step ${item.state}">
+      <span class="workflow-dot" aria-hidden="true"></span>
+      <span class="workflow-label">${item.label}</span>
+    </li>`).join("")}
+  </ul>`;
+}
+
 function renderWorkflowBanner(row) {
   if (!row) return "";
   const comments = row.workflow?.sectionComments || {};
   const commentEntries = Object.entries(comments).filter(([, value]) => String(value || "").trim());
-  const timeline = [
-    { key: WORKFLOW_STAGES.DRAFT_RM, label: "Draft" },
-    { key: WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER, label: "Proposing" },
-    { key: WORKFLOW_STAGES.SUBMITTED_2LOD, label: "Approving" },
-    { key: WORKFLOW_STAGES.DECISION_ACCEPTED, label: "Active" }
-  ];
-  const currentIndex = Math.max(
-    0,
-    timeline.findIndex((step) => step.key === row.workflow?.stage)
-  );
   return `<section class="card workflow-banner">
     <div class="panel-head">
       <h3>Stage: ${workflowStageLabel(row.workflow?.stage)}</h3>
       <div class="stage-role">Role: ${roleContextText()}</div>
     </div>
-    <ol class="workflow-timeline">
-      ${timeline.map((step, idx) => `<li class="workflow-step ${idx < currentIndex ? "done" : idx === currentIndex ? "current" : ""}">${step.label}</li>`).join("")}
-    </ol>
+    ${renderWorkflowTimeline(row)}
     <div class="table-filter-row">
       <label for="actor-role-select">Acting as</label>
       <select id="actor-role-select">
@@ -1923,6 +1963,19 @@ function renderHome() {
 
   const selectedTableHtml = `
     <section class="card">
+      <div class="main-search-row">
+        <label for="main-search">Search</label>
+        <div class="autocomplete-wrap">
+          <input id="main-search" value="${state.searchTerm}" autocomplete="off" placeholder="ID / Name / RM / Country" />
+          ${renderSearchAutocomplete()}
+        </div>
+        <button class="btn secondary small" data-action="reset-search">Reset</button>
+      </div>
+      <div class="table-filter-row">
+        <button class="btn secondary small ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
+        <button class="btn secondary small ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
+        <button class="btn secondary small ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Alerts</button>
+      </div>
       <div class="panel-head">
         <h3>Selected View: ${statusText}</h3>
         ${renderColumnsToggle("home")}
@@ -1948,23 +2001,11 @@ function renderHome() {
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Credit Approvals</h2>
-        <div class="main-search-row">
-          <label for="main-search">Search</label>
-        <div class="autocomplete-wrap">
-          <input id="main-search" value="${state.searchTerm}" autocomplete="off" placeholder="ID / Name / RM / Country" />
-          ${renderSearchAutocomplete()}
-        </div>
-        <button class="btn secondary small" data-action="reset-search">Reset</button>
-      </div>
-      ${state.loadWarning ? `<p class="warning-note">${state.loadWarning}</p>` : ""}
+      
+      ${renderViewSubheading("Monitor credit documents at a glance, then refine directly in the selected table view.")}
       <div class="metric-grid">
         ${metricCards.map((card) => `<div class="metric"><span>${card.label}</span><strong>${card.value}</strong></div>`).join("")}
         <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
-      </div>
-      <div class="table-filter-row">
-        <button class="btn secondary small ${state.quickView === "none" ? "active" : ""}" data-quick-view="none">All Docs</button>
-        <button class="btn secondary small ${state.quickView === "mydocs" ? "active" : ""}" data-quick-view="mydocs">My Docs</button>
-        <button class="btn secondary small ${state.quickView === "governancealerts" ? "active" : ""}" data-quick-view="governancealerts">Alerts</button>
       </div>
     </section>
     ${selectedTableHtml}
@@ -2018,20 +2059,21 @@ function renderInbox() {
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Inbox</h2>
+      ${renderViewSubheading("Prioritize assigned work quickly, then switch scope and search in the results table card.")}
+      <div class="metric-grid">
+        ${metricHtml}
+      </div>
+    </section>
+    <section class="card">
       <div class="main-search-row">
         <label for="main-search">Search</label>
         <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / RM / Country" />
         <button class="btn secondary small" data-action="reset-search">Reset</button>
       </div>
-      <div class="metric-grid">
-        ${metricHtml}
-      </div>
       <div class="table-filter-row">
         <button class="btn secondary small ${state.inboxScope === "my" ? "active" : ""}" data-inbox-scope="my">My Inbox</button>
         <button class="btn secondary small ${state.inboxScope === "team" ? "active" : ""}" data-inbox-scope="team">Team Inbox</button>
       </div>
-    </section>
-    <section class="card">
       <div class="panel-head">
         <h3>${state.inboxScope === "my" ? "My Inbox" : "Team Inbox"} | ${state.inboxType} | ${state.inboxStatus === "all" ? "ALL" : state.inboxStatus.toUpperCase()}</h3>
         ${renderColumnsToggle("inbox")}
@@ -2084,6 +2126,12 @@ function renderPortfolio() {
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Portfolio Monitoring</h2>
+      ${renderViewSubheading("Track segment utilization trends first, then apply search and filters directly above the hierarchy table.")}
+      <div class="metric-grid">
+        ${segmentCards.map((card) => `<div class="metric metric-segment"><span>${card.label}</span><strong>$${card.amount.toFixed(1)}m</strong><small>Utilization ${card.utilization}%</small><div class="metric-mini-chart">${card.miniBars.map((v) => `<i style="height:${Math.max(10, Math.min(100, v))}%"></i>`).join("")}</div></div>`).join("")}
+      </div>
+    </section>
+    <section class="card">
       <div class="main-search-row">
         <label for="main-search">Search</label>
         <input id="main-search" value="${state.searchTerm}" placeholder="ID / Name / RM / Country" />
@@ -2095,11 +2143,6 @@ function renderPortfolio() {
         ${renderTagMultiSelect("product", "Product")}
         <button class="btn secondary small portfolio-clear-btn" data-action="reset-table-filters">Clear</button>
       </div>
-      <div class="metric-grid">
-        ${segmentCards.map((card) => `<div class="metric metric-segment"><span>${card.label}</span><strong>$${card.amount.toFixed(1)}m</strong><small>Utilization ${card.utilization}%</small><div class="metric-mini-chart">${card.miniBars.map((v) => `<i style="height:${Math.max(10, Math.min(100, v))}%"></i>`).join("")}</div></div>`).join("")}
-      </div>
-    </section>
-    <section class="card">
       <div class="panel-head">
         <h3>Selected View: ${statusText}</h3>
         <div class="quick-actions">

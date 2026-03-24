@@ -76,8 +76,14 @@ body {
   min-height: 2rem;
 }
 .portfolio-filter-row {
-  margin-left: 4.2rem;
-  width: calc(100% - 4.2rem);
+  margin-left: 0;
+  width: 100%;
+}
+.view-subheading {
+  margin: 0 0 0.55rem;
+  color: #4a5f81;
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 input,
 select,
@@ -722,6 +728,11 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.9rem;
+}
+.form-stack input,
+.form-stack textarea,
+.form-stack select {
+  width: 100%;
 }
 .ant-form-vertical label {
   width: 100%;
@@ -1407,32 +1418,73 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   font-weight: 600;
 }
 .workflow-timeline {
-  margin: 0.4rem 0 0.25rem;
-  padding: 0;
+  margin: 0.4rem 0 0.35rem;
+  padding: 0.2rem 0 0.1rem;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 .workflow-step {
-  border: 1px solid #ccd7eb;
-  border-radius: 999px;
-  padding: 0.25rem 0.45rem;
-  font-size: 0.76rem;
-  text-align: center;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding-left: 0.05rem;
+}
+.workflow-step::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 18px;
+  bottom: -10px;
+  width: 1px;
+  background: #d8e0ef;
+}
+.workflow-step:last-child::after {
+  display: none;
+}
+.workflow-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #9eb0cb;
+  background: #fff;
+  margin-top: 1px;
+  flex: 0 0 16px;
+}
+.workflow-label {
+  font-size: 0.81rem;
+  font-weight: 600;
   color: #4d607f;
-  background: #f7f9ff;
+  line-height: 1.2;
 }
 .workflow-step.current {
-  border-color: #83a5df;
-  background: #e7f0ff;
   color: #1d4d93;
-  font-weight: 700;
+}
+.workflow-step.current .workflow-dot {
+  border-color: #2f73d9;
+  background: #dce9ff;
 }
 .workflow-step.done {
-  border-color: #9cc4aa;
-  background: #edf8f0;
   color: #1e6a3d;
+}
+.workflow-step.done .workflow-dot {
+  border-color: #2a9151;
+  background: #2a9151;
+}
+.workflow-step.terminal-success {
+  color: #1e6a3d;
+}
+.workflow-step.terminal-success .workflow-dot {
+  border-color: #198754;
+  background: #198754;
+}
+.workflow-step.terminal-failed {
+  color: #a32929;
+}
+.workflow-step.terminal-failed .workflow-dot {
+  border-color: #c93737;
+  background: #ffe7e7;
 }
 
 .workflow-banner select {
@@ -1672,6 +1724,9 @@ input.invalid, textarea.invalid { border-color: var(--danger); }
   }
   .desc-row {
     grid-template-columns: 1fr;
+  }
+  .workflow-step::after {
+    bottom: -8px;
   }
   .desc-label {
     border-right: 0;
