@@ -5,3 +5,9 @@ cad/
 cet/
 governance/
 new-design/
+
+# Local agent/editor config (do not commit)
+.claude/
+.cursor/
+.kiro/
+.codex/skills/
