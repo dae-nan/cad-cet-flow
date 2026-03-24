@@ -3676,7 +3676,7 @@ function initEvents() {
     const btn = event.target.closest("[data-help-type]");
     if (!btn) return;
     if (btn.dataset.helpType === "docs") {
-      window.alert("Documentation is available in local workspace only.");
+      window.open("documents/openspec/index.html", "_blank", "noopener,noreferrer");
       dom.helpMenu.classList.remove("open");
       state.openHelpMenu = false;
       return;
