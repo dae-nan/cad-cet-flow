@@ -36,10 +36,7 @@
       flex-wrap: wrap;
       margin-bottom: 14px;
     }
-    .meta {
-      color: var(--muted);
-      font-size: 14px;
-    }
+    .meta { color: var(--muted); font-size: 14px; }
     .actions a {
       color: var(--link);
       text-decoration: none;
@@ -47,19 +44,14 @@
       font-size: 14px;
       font-weight: 600;
     }
-    .actions a:hover {
-      text-decoration: underline;
-    }
+    .actions a:hover { text-decoration: underline; }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 20px;
     }
-    .error {
-      color: var(--error);
-      white-space: pre-wrap;
-    }
+    .error { color: var(--error); white-space: pre-wrap; }
     .markdown h1, .markdown h2, .markdown h3, .markdown h4 {
       margin-top: 26px;
       margin-bottom: 10px;
@@ -69,13 +61,8 @@
     .markdown h2 { font-size: 24px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
     .markdown h3 { font-size: 20px; }
     .markdown h4 { font-size: 17px; }
-    .markdown p, .markdown li {
-      line-height: 1.65;
-      font-size: 15px;
-    }
-    .markdown ul, .markdown ol {
-      padding-left: 24px;
-    }
+    .markdown p, .markdown li { line-height: 1.65; font-size: 15px; }
+    .markdown ul, .markdown ol { padding-left: 24px; }
     .markdown code {
       background: var(--code-bg);
       border: 1px solid var(--accent);
@@ -116,20 +103,10 @@
       text-align: left;
       vertical-align: top;
     }
-    .markdown th {
-      background: #f2f6fc;
-      font-weight: 700;
-    }
-    .markdown a {
-      color: var(--link);
-      text-decoration: none;
-    }
-    .markdown a:hover {
-      text-decoration: underline;
-    }
-    .muted {
-      color: var(--muted);
-    }
+    .markdown th { background: #f2f6fc; font-weight: 700; }
+    .markdown a { color: var(--link); text-decoration: none; }
+    .markdown a:hover { text-decoration: underline; }
+    .muted { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -149,6 +126,8 @@
     </div>
   </main>
   <script>
+    const ALLOWED_ROOTS = ["changes/", "docs/"];
+
     function escapeHtml(str) {
       return str
         .replace(/&/g, "&amp;")
@@ -170,8 +149,8 @@
         return { ok: false, reason: "Absolute paths are not allowed." };
       }
       const normalized = decoded.replace(/\\/g, "/").replace(/^\.\/+/, "");
-      if (!normalized.startsWith("changes/")) {
-        return { ok: false, reason: "Only files under changes/ are allowed." };
+      if (!ALLOWED_ROOTS.some((prefix) => normalized.startsWith(prefix))) {
+        return { ok: false, reason: "Only files under approved documentation roots are allowed." };
       }
       if (!normalized.endsWith(".md")) {
         return { ok: false, reason: "Only markdown files are allowed." };
@@ -248,6 +227,27 @@
       return source;
     }
 
+    async function readText(path) {
+      if (window.location.protocol === "file:") {
+        return await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", path, true);
+          xhr.onload = () => {
+            if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+              resolve(xhr.responseText);
+              return;
+            }
+            reject(new Error(`HTTP ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error("Network error"));
+          xhr.send();
+        });
+      }
+      const resp = await fetch(path, { cache: "no-store" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return await resp.text();
+    }
+
     async function init() {
       const params = new URLSearchParams(window.location.search);
       const raw = params.get("doc");
@@ -270,12 +270,7 @@
       rawLink.href = docPath;
 
       try {
-        const resp = await fetch(docPath, { cache: "no-store" });
-        if (!resp.ok) {
-          content.innerHTML = `<p class="error">Failed to load markdown (${resp.status}).</p>`;
-          return;
-        }
-        const markdown = await resp.text();
+        const markdown = await readText(docPath);
         content.innerHTML = `<article class="markdown">${renderMarkdown(markdown)}</article>`;
       } catch (err) {
         content.innerHTML = `<p class="error">Could not fetch markdown.\n${escapeHtml(String(err))}</p>`;

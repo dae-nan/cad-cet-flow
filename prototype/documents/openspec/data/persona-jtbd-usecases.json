@@ -1,0 +1,203 @@
+{
+  "personas": [
+    { "id": "rm", "label": "1st Line RM" },
+    { "id": "bp", "label": "Proposer" },
+    { "id": "2lod", "label": "Approver" },
+    { "id": "gov", "label": "Governance Admin" }
+  ],
+  "usecases": [
+    {
+      "id": "uc-rm-001",
+      "personaId": "rm",
+      "personaName": "1st Line RM",
+      "character": "Ravi Menon",
+      "journeyStage": "Draft Preparation",
+      "title": "Draft and submit RM package",
+      "jtbd": {
+        "functional": "When I prepare a CAD draft, help me complete RM-owned sections and submit confidently.",
+        "emotional": "I want confidence that I have not missed mandatory context.",
+        "social": "I want downstream reviewers to see I have prepared a complete package."
+      },
+      "trigger": "New or returned draft appears in My Docs.",
+      "desiredOutcome": "Document advances to proposer stage with clear stage context.",
+      "openSpecLink": "viewer.html?doc=changes/governance-feedback-ux-alignment/specs/document-lifecycle-and-actions/spec.md",
+      "idealScenario": "RM completes required sections, validates, and submits without blockers.",
+      "edgeCases": [
+        "Missing mandatory section prompts issue panel feedback.",
+        "Returned rework state requires preserving prior comments."
+      ],
+      "sampleData": {
+        "documentId": "G-CAD-1001",
+        "status": "DRAFT_RM",
+        "owner": "Ravi Menon",
+        "region": "India"
+      },
+      "uiRoute": "../../index.html#/cad/G-CAD-1001/india",
+      "dataDesign": {
+        "apis": ["GET /documents/:id", "PATCH /documents/:id/sections", "POST /documents/:id/submit"],
+        "models": ["DocumentWorkflowState", "SectionOwnership", "ParticipantAssignments"]
+      }
+    },
+    {
+      "id": "uc-bp-001",
+      "personaId": "bp",
+      "personaName": "Proposer",
+      "character": "Priya Nair",
+      "journeyStage": "Proposer Review",
+      "title": "Review and forward to 2nd line",
+      "jtbd": {
+        "functional": "When I receive proposer-stage work, help me validate business sections and submit to approver.",
+        "emotional": "I want assurance that approvals will not bounce due to unclear narrative.",
+        "social": "I want to show disciplined ownership over business rationale."
+      },
+      "trigger": "Document enters DRAFT_BUSINESS_PROPOSER stage.",
+      "desiredOutcome": "Document transitions to SUBMITTED_2LOD with proposer edits preserved.",
+      "openSpecLink": "viewer.html?doc=changes/governance-feedback-ux-alignment/specs/document-lifecycle-and-actions/spec.md",
+      "idealScenario": "Proposer updates business sections and submits to 2nd line successfully.",
+      "edgeCases": [
+        "Locked sections are edited by wrong role and must be blocked.",
+        "Submission missing key narrative triggers validation warning."
+      ],
+      "sampleData": {
+        "documentId": "C-CAD-IN-01",
+        "status": "DRAFT_BUSINESS_PROPOSER",
+        "proposer": "Priya Nair",
+        "segment": "Retail"
+      },
+      "uiRoute": "../../index.html#/cad/G-CAD-1001/india/C-CAD-IN-01",
+      "dataDesign": {
+        "apis": ["GET /documents/:id", "PATCH /documents/:id/sections", "POST /documents/:id/submit-proposer"],
+        "models": ["DocumentWorkflowState", "EditableSectionMatrix"]
+      }
+    },
+    {
+      "id": "uc-2lod-001",
+      "personaId": "2lod",
+      "personaName": "Approver",
+      "character": "Daniel Chua",
+      "journeyStage": "2nd Line Decision",
+      "title": "Approve, caveat, or reject with commentary",
+      "jtbd": {
+        "functional": "When I review submissions, help me make a clear decision and capture reasoning.",
+        "emotional": "I need confidence my decision is transparent and auditable.",
+        "social": "I need to demonstrate disciplined credit judgment to governance peers."
+      },
+      "trigger": "Document enters SUBMITTED_2LOD stage.",
+      "desiredOutcome": "Decision and commentary are persisted and routed correctly.",
+      "openSpecLink": "viewer.html?doc=changes/governance-feedback-ux-alignment/specs/cet-governance-validation/spec.md",
+      "idealScenario": "Approver records section comments and end commentary with a final decision.",
+      "edgeCases": [
+        "Caveat decision without commentary is blocked.",
+        "Reject route must preserve full feedback context for rework."
+      ],
+      "sampleData": {
+        "documentId": "CET-IN-202",
+        "status": "SUBMITTED_2LOD",
+        "decision": "ACCEPT_WITH_CAVEATS",
+        "commentaryRequired": true
+      },
+      "uiRoute": "../../index.html#/cad/G-CAD-1001/india/C-CAD-IN-01/CET-IN-202",
+      "dataDesign": {
+        "apis": ["POST /documents/:id/decision", "POST /documents/:id/comments"],
+        "models": ["ApprovalDecision", "DecisionCommentary", "ReworkRouting"]
+      }
+    },
+    {
+      "id": "uc-gov-001",
+      "personaId": "gov",
+      "personaName": "Governance Admin",
+      "character": "Aisha Lim",
+      "journeyStage": "Policy Oversight",
+      "title": "Administer governance controls",
+      "jtbd": {
+        "functional": "When I configure controls, help me enforce role and policy boundaries clearly.",
+        "emotional": "I need confidence controls are visible and auditable.",
+        "social": "I need to maintain trust with risk and compliance stakeholders."
+      },
+      "trigger": "Governance alert or policy review cycle begins.",
+      "desiredOutcome": "Controls are configured with clear role boundaries and traceability.",
+      "openSpecLink": "viewer.html?doc=changes/governance-feedback-ux-alignment/specs/role-based-access-governance/spec.md",
+      "idealScenario": "Governance updates controls while preserving non-initiation role boundaries.",
+      "edgeCases": [
+        "Governance user incorrectly receives proposer permissions.",
+        "Policy override attempted without audit annotation."
+      ],
+      "sampleData": {
+        "controlId": "GOV-POL-22",
+        "role": "governance",
+        "scope": "global",
+        "alertCount": 3
+      },
+      "uiRoute": "../../index.html#/governance",
+      "dataDesign": {
+        "apis": ["GET /governance/controls", "PATCH /governance/controls/:id"],
+        "models": ["GovernanceControl", "RoleEntitlement", "AuditEvent"]
+      }
+    },
+    {
+      "id": "uc-rm-002",
+      "personaId": "rm",
+      "personaName": "1st Line RM",
+      "character": "Ravi Menon",
+      "journeyStage": "Workspace Navigation",
+      "title": "Navigate Home and Inbox with consistent controls",
+      "jtbd": {
+        "functional": "When triaging workload, help me use consistent filters across Home and Inbox.",
+        "emotional": "I want low-friction confidence that I'm viewing the right subset.",
+        "social": "I want teammates to follow the same control model to reduce confusion."
+      },
+      "trigger": "RM opens Home/Inbox for daily triage.",
+      "desiredOutcome": "Consistent search/KPI/filter rhythm across views.",
+      "openSpecLink": "viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/specs/workspace-navigation-context/spec.md",
+      "idealScenario": "Home and Inbox controls behave consistently with expected filter semantics.",
+      "edgeCases": [
+        "Mobile rail must expose scope controls without clipping.",
+        "Mixed filter states should not hide status cards unexpectedly."
+      ],
+      "sampleData": {
+        "view": "home",
+        "scope": "My Docs",
+        "documentType": "group",
+        "search": "India"
+      },
+      "uiRoute": "../../index.html#/home",
+      "dataDesign": {
+        "apis": ["GET /workspace/home", "GET /workspace/inbox"],
+        "models": ["WorkspaceFilterState", "InboxScope"]
+      }
+    },
+    {
+      "id": "uc-bp-002",
+      "personaId": "bp",
+      "personaName": "Proposer",
+      "character": "Priya Nair",
+      "journeyStage": "Portfolio Monitoring",
+      "title": "Review segment exposure cards",
+      "jtbd": {
+        "functional": "When reviewing portfolios, help me compare segment exposure and utilization quickly.",
+        "emotional": "I want confidence that segment concentration signals are visible.",
+        "social": "I want leadership-ready summaries during portfolio discussions."
+      },
+      "trigger": "Proposer opens portfolio monitoring view.",
+      "desiredOutcome": "Exposure cards reveal Wealth, Retail, and SME Business Banking patterns.",
+      "openSpecLink": "viewer.html?doc=changes/credit-approval-ux-consistency-phase-2/specs/portfolio-monitoring-hierarchy/spec.md",
+      "idealScenario": "Segment cards display amount, utilization, and trend consistently.",
+      "edgeCases": [
+        "SME and Business Banking aggregation mismatch.",
+        "Trend mini-bars render incomplete data states."
+      ],
+      "sampleData": {
+        "segments": [
+          { "name": "Wealth", "amount": 82000000, "utilization": 0.62 },
+          { "name": "Retail", "amount": 56000000, "utilization": 0.57 },
+          { "name": "SME Business Banking", "amount": 43000000, "utilization": 0.71 }
+        ]
+      },
+      "uiRoute": "../../index.html#/portfolio",
+      "dataDesign": {
+        "apis": ["GET /portfolio/segments"],
+        "models": ["PortfolioSegmentExposure", "TrendSeries"]
+      }
+    }
+  ]
+}
