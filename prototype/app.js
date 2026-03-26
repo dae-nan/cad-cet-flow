@@ -98,15 +98,17 @@ const state = {
     countryDetail: 1
   },
   visibleColumns: {
-    home: { legalEntity: false, id: false },
-    inbox: { legalEntity: false, id: false },
+    home: { legalEntity: false, id: false, product: false, clientSegment: false, rm: false, businessProposer: false, approver: false },
+    inbox: { legalEntity: false, id: false, product: false, clientSegment: false, rm: false, businessProposer: false, approver: false },
     portfolio: { legalEntity: false, id: false, rm: false, businessProposer: false, approver: false, type: false },
     groupDetail: { legalEntity: false, id: false },
     countryDetail: { legalEntity: false, id: false }
   },
   portfolioColumnOrder: [],
+  portfolioFiltersOpen: false,
   openColumnMenu: "",
   openHelpMenu: false,
+  compactDefaultsMode: "",
   expandedGroups: new Set(),
   expandedCountries: new Set(),
   hierarchyInitialized: true,
@@ -217,6 +219,75 @@ const WORKFLOW_STAGES = {
   RETURNED_REWORK_RM: "RETURNED_REWORK_RM",
   RETURNED_REWORK_BUSINESS_PROPOSER: "RETURNED_REWORK_BUSINESS_PROPOSER"
 };
+
+const STATUS_ABBR = {
+  DRAFT: "DRAF",
+  PROPOSING: "PROP",
+  APPROVING: "APRV",
+  ACTIVE: "ACTV",
+  RETIRED: "RETR",
+  INFLIGHT: "INFL",
+  SUCCESS: "SUCC",
+  FAILED: "FAIL",
+  "GOVERNANCE ALERTS": "ALRT",
+  ALERTS: "ALRT",
+  "MY DOCS": "MYDC",
+  CLOSED: "CLOS"
+};
+
+function viewportMode() {
+  if (window.matchMedia("(max-width: 767px)").matches) return "mobile";
+  if (window.matchMedia("(max-width: 1024px)").matches) return "tablet";
+  return "desktop";
+}
+
+function isCompactViewport() {
+  return viewportMode() !== "desktop";
+}
+
+function shortCode(text, size = 4) {
+  return String(text || "")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .toUpperCase()
+    .slice(0, size) || "-";
+}
+
+function attrEscape(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function compactStatusLabel(status) {
+  const normalized = String(status || "").toUpperCase().trim();
+  return STATUS_ABBR[normalized] || shortCode(normalized, 4);
+}
+
+function compactMetricLabel(label) {
+  if (!isCompactViewport()) return label;
+  const normalized = String(label || "").toUpperCase().trim();
+  return STATUS_ABBR[normalized] || shortCode(normalized, 4);
+}
+
+function compactHeader(full, short) {
+  return isCompactViewport() ? short : full;
+}
+
+function truncateWithTitle(text, max = 44) {
+  const raw = String(text || "-");
+  if (raw.length <= max) return `<span class="ellipsis" title="${attrEscape(raw)}">${raw}</span>`;
+  return `<span class="ellipsis" title="${attrEscape(raw)}">${raw.slice(0, max - 1)}…</span>`;
+}
+
+function timelineToken(label) {
+  const normalized = String(label || "").toUpperCase().trim();
+  if (normalized.startsWith("OUTCOME: SUCCESS")) return "SU";
+  if (normalized.startsWith("OUTCOME: FAILED")) return "FA";
+  const compact = STATUS_ABBR[normalized] || shortCode(normalized, 2);
+  return compact.slice(0, 2);
+}
 
 function uniqueValues(rows, key) {
   return [...new Set(rows.map((r) => r[key]).filter(Boolean))].sort();
@@ -819,6 +890,7 @@ function workflowTimelineItems(row) {
     const currentIndex = Math.max(0, items.findIndex((step) => step.key === row.workflow?.stage));
     return items.map((step, idx) => ({
       label: step.label,
+      token: timelineToken(step.label),
       state: idx < currentIndex ? "done" : idx === currentIndex ? "current" : "pending"
     }));
   }
@@ -831,8 +903,12 @@ function workflowTimelineItems(row) {
   const terminalStatus = String(row.status || "").toUpperCase();
   if (terminalStatus === "SUCCESS" || terminalStatus === "FAILED") {
     return [
-      ...stageItems.map((step) => ({ label: step.label, state: "done" })),
-      { label: terminalStatus === "SUCCESS" ? "Outcome: Success" : "Outcome: Failed", state: terminalStatus === "SUCCESS" ? "terminal-success" : "terminal-failed" }
+      ...stageItems.map((step) => ({ label: step.label, token: timelineToken(step.label), state: "done" })),
+      {
+        label: terminalStatus === "SUCCESS" ? "Outcome: Success" : "Outcome: Failed",
+        token: terminalStatus === "SUCCESS" ? "SU" : "FA",
+        state: terminalStatus === "SUCCESS" ? "terminal-success" : "terminal-failed"
+      }
     ];
   }
 
@@ -840,16 +916,17 @@ function workflowTimelineItems(row) {
   return [
     ...stageItems.map((step, idx) => ({
       label: step.label,
+      token: timelineToken(step.label),
       state: idx < currentIndex ? "done" : idx === currentIndex ? "current" : "pending"
     })),
-    { label: "Outcome", state: "pending" }
+    { label: "Outcome", token: "OU", state: "pending" }
   ];
 }
 
 function renderWorkflowTimeline(row) {
   return `<ul class="workflow-timeline" aria-label="Workflow timeline">
-    ${workflowTimelineItems(row).map((item) => `<li class="workflow-step ${item.state}">
-      <span class="workflow-dot" aria-hidden="true"></span>
+    ${workflowTimelineItems(row).map((item) => `<li class="workflow-step ${item.state}" title="${attrEscape(item.label)}" aria-label="${attrEscape(item.label)}">
+      <span class="workflow-dot" aria-hidden="true"><span class="workflow-dot-text">${item.token || timelineToken(item.label)}</span></span>
       <span class="workflow-label">${item.label}</span>
     </li>`).join("")}
   </ul>`;
@@ -1217,9 +1294,11 @@ function statusMatch(type, row) {
   return row.status === state.homeStatus;
 }
 
-function statusTag(status) {
+function statusTag(status, opts = {}) {
   const normalized = String(status || "").toUpperCase();
-  const label = normalized === "INFLIGHT" ? "INFLIGHT" : normalized;
+  const fullLabel = normalized === "INFLIGHT" ? "INFLIGHT" : normalized;
+  const compact = opts.compact ?? isCompactViewport();
+  const label = compact ? compactStatusLabel(fullLabel) : fullLabel;
   const clsMap = {
     DRAFT: "tag-draft",
     PROPOSING: "tag-proposing",
@@ -1231,7 +1310,7 @@ function statusTag(status) {
     FAILED: "tag-failed"
   };
   const cls = clsMap[normalized] || "tag-draft";
-  return `<span class="status-tag ${cls}"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${label}</span></span>`;
+  return `<span class="status-tag ${cls} ${compact ? "is-compact" : ""}" title="${attrEscape(fullLabel)}"><span class="status-dot" aria-hidden="true"></span><span class="status-text">${label}</span></span>`;
 }
 
 function ownerInitials(owner) {
@@ -1251,10 +1330,11 @@ function ownerAvatarCell(owner) {
   return `<span class="owner-cell" title="${owner || "Unassigned"}"><span class="owner-avatar">${ownerInitials(owner)}</span></span>`;
 }
 
-function participantCell(row, key) {
+function participantCell(row, key, opts = {}) {
   const participants = row.participants || defaultParticipants(row);
   const name = participants[key] || "-";
-  return `<span title="${name}">${ownerCell(name)}</span>`;
+  const compact = opts.compact ?? isCompactViewport();
+  return `<span title="${attrEscape(name)}">${compact ? ownerAvatarCell(name) : ownerCell(name)}</span>`;
 }
 
 function typeMeta(type) {
@@ -1376,6 +1456,38 @@ function isLaptopView() {
   return window.matchMedia("(min-width: 1025px)").matches;
 }
 
+function applyResponsiveColumnDefaults() {
+  const mode = viewportMode();
+  if (mode === "desktop") {
+    state.compactDefaultsMode = "";
+    return;
+  }
+  if (state.compactDefaultsMode === mode) return;
+  Object.assign(state.visibleColumns.home, {
+    id: false,
+    legalEntity: false,
+    product: false,
+    clientSegment: false,
+    rm: false,
+    businessProposer: false,
+    approver: false
+  });
+  Object.assign(state.visibleColumns.inbox, {
+    id: false,
+    legalEntity: false,
+    product: false,
+    clientSegment: false,
+    rm: false,
+    businessProposer: false,
+    approver: false
+  });
+  Object.assign(state.visibleColumns.portfolio, {
+    id: false,
+    legalEntity: false
+  });
+  state.compactDefaultsMode = mode;
+}
+
 function paginateRows(rows, tableKey) {
   const pageSize = isLaptopView() ? (TABLE_PAGE_SIZE[tableKey] || 0) : 0;
   if (!pageSize) {
@@ -1450,6 +1562,24 @@ function renderColumnsToggle(tableKey) {
         </div>
       </div>`;
   }
+  if (tableKey === "home" || tableKey === "inbox") {
+    const options = [
+      { key: "product", label: "Product" },
+      { key: "clientSegment", label: "Segment" },
+      { key: "rm", label: "RM" },
+      { key: "businessProposer", label: "Proposer" },
+      { key: "approver", label: "Approver" },
+      { key: "legalEntity", label: "Legal Entity" },
+      { key: "id", label: "ID" }
+    ];
+    return `
+      <div class="columns-wrap">
+        <button class="btn secondary small icon-only" title="Add columns" data-toggle-columns="${tableKey}">☰</button>
+        <div class="columns-menu ${state.openColumnMenu === tableKey ? "open" : ""}">
+          ${options.map((opt) => `<label><input type="checkbox" data-column-table="${tableKey}" data-column-key="${opt.key}" ${cols[opt.key] ? "checked" : ""}/> ${opt.label}</label>`).join("")}
+        </div>
+      </div>`;
+  }
   return `
     <div class="columns-wrap">
       <button class="btn secondary small icon-only" title="Add columns" data-toggle-columns="${tableKey}">☰</button>
@@ -1484,15 +1614,17 @@ function utilizationClass(pct) {
 function utilizationCell(row) {
   const pct = utilizationPct(row);
   const cls = utilizationClass(pct);
+  const compact = isCompactViewport();
   const steps = 5;
   const active = Math.max(0, Math.min(steps, Math.round((pct / 100) * steps)));
-  return `<div class="util-wrap ${cls}">
+  return `<div class="util-wrap ${cls} ${compact ? "compact" : ""}" title="Utilization ${pct}%">
     <div class="util-steps">${new Array(steps).fill(0).map((_, i) => `<span class="util-step ${i < active ? "on" : ""}"></span>`).join("")}</div>
     <span class="util-num">${pct}%</span>
   </div>`;
 }
 
 function trendCell(row) {
+  const compact = isCompactViewport();
   let history = row.usageHistory || [42, 45, 48, 50, 53, 56];
   if (row.id && row.id === state.data.groupCads?.[0]?.id) {
     history = [72, 80, 87, 104, 91, 86];
@@ -1514,9 +1646,12 @@ function trendCell(row) {
     return `<span class="trend-bar ${cls}" style="height:${h}px"></span>`;
   }).join("");
   const hint = `${breaches.length ? `Breached: ${breaches.join(", ")}` : "No breach"}${near.length ? ` | Near: ${near.join(", ")}` : ""}`;
-  return `<div class="trend-mini" title="${hint}">
+  const util = utilizationPct(row);
+  const headroom = Math.max(0, 100 - util);
+  return `<div class="trend-mini ${compact ? "compact" : ""}" title="${hint} | Headroom ${headroom}%">
     <span class="limit-line"></span>
     <div class="trend-bars">${bars}</div>
+    <span class="headroom">${compact ? `HR ${headroom}` : `Headroom ${headroom}%`}</span>
   </div>`;
 }
 
@@ -1543,10 +1678,16 @@ function ensureExpandedDefaults() {
 }
 
 function renderHierarchyTable() {
+  const compact = isCompactViewport();
   ensureExpandedDefaults();
   const cols = state.visibleColumns.portfolio;
   const selectedType = state.portfolioType || "all";
   const orderedOptional = state.portfolioColumnOrder.filter((k) => cols[k] && k !== "type");
+  const showSegment = !compact;
+  const showProduct = !compact;
+  const showExposure = !compact;
+  const showLimit = !compact;
+  const showStatus = true;
   const optionalLabel = {
     rm: "RM",
     businessProposer: "Proposer",
@@ -1575,11 +1716,11 @@ function renderHierarchyTable() {
   };
   const countryWithTag = (row) => `<div class="country-with-tag">${countryCell(row.country || "Global")}${legalEntityTag(row)}</div>`;
   const nameCell = (row, href) => {
-    return `<td class="key-col"><div class="name-tree"><a href="${href}">${row.name}</a></div><div class="id-row">${idTag(row.id)}</div></td>`;
+    return `<td class="key-col"><div class="name-tree"><a href="${href}">${truncateWithTitle(row.name, compact ? 24 : 56)}</a></div><div class="id-row">${idTag(row.id)}</div></td>`;
   };
   const groupRows = sortRows(applyCommonFilters(state.data.groupCads).filter((g) => statusMatch("group", g)).map((g) => ({ type: "GROUP", ...g })), "portfolio");
   const out = [];
-  const colCount = 10 + orderedOptional.length;
+  const colCount = 7 + orderedOptional.length + (showSegment ? 1 : 0) + (showProduct ? 1 : 0) + (showExposure ? 1 : 0) + (showLimit ? 1 : 0);
 
   for (const group of groupRows) {
     const countriesAll = sortRows(applyCommonFilters(
@@ -1599,12 +1740,13 @@ function renderHierarchyTable() {
               ${expanderCell(x)}
               <td>${typeIconCell(x.type, `tiny depth-${depthForType(x.type)}`)}</td>
               <td>${countryWithTag(x)}</td>
-              <td>${x.clientSegment || "-"}</td>
-              <td>${productCell(x.product)}</td>
+              ${showSegment ? `<td>${truncateWithTitle(x.clientSegment || "-", 12)}</td>` : ""}
+              ${showProduct ? `<td>${productCell(x.product)}</td>` : ""}
               ${nameCell(x, PATH.detail(group.id, country.country, country.id, x.id))}
               ${orderedOptional.map((k) => optionalCell(x, 3, k)).join("")}
-              <td class="num-cell">${formatMoney(x, x.exposure || Math.round((x.limit || 10) * 0.65))}</td>
-              <td class="num-cell">${formatMoney(x, x.cap || x.limit || 10)}</td>
+              ${showExposure ? `<td class="num-cell">${formatMoney(x, x.exposure || Math.round((x.limit || 10) * 0.65))}</td>` : ""}
+              ${showLimit ? `<td class="num-cell">${formatMoney(x, x.cap || x.limit || 10)}</td>` : ""}
+              ${showStatus ? `<td>${statusTag(x.status, { compact })}</td>` : ""}
               <td>${utilizationCell(x)}</td>
               <td>${trendCell(x)}</td>
             </tr>`).join("");
@@ -1618,12 +1760,13 @@ function renderHierarchyTable() {
           ${expanderCell(country, group.id, country.id, countryExpanded)}
           <td>${typeIconCell(country.type || "COUNTRY", `tiny depth-${depthForType(country.type || "COUNTRY")}`)}</td>
           <td>${countryWithTag(country)}</td>
-          <td>${country.clientSegment || "-"}</td>
-          <td>${productCell(country.product)}</td>
+          ${showSegment ? `<td>${truncateWithTitle(country.clientSegment || "-", 12)}</td>` : ""}
+          ${showProduct ? `<td>${productCell(country.product)}</td>` : ""}
           ${nameCell(country, PATH.country(group.id, country.country, country.id))}
           ${orderedOptional.map((k) => optionalCell(country, 2, k)).join("")}
-          <td class="num-cell">${formatMoney(country, country.exposure || Math.round(((country.cetExposure || 0) + (country.sandboxExposure || 0) || 42)))}</td>
-          <td class="num-cell">${formatMoney(country, country.cap || country.limit || 100)}</td>
+          ${showExposure ? `<td class="num-cell">${formatMoney(country, country.exposure || Math.round(((country.cetExposure || 0) + (country.sandboxExposure || 0) || 42)))}</td>` : ""}
+          ${showLimit ? `<td class="num-cell">${formatMoney(country, country.cap || country.limit || 100)}</td>` : ""}
+          ${showStatus ? `<td>${statusTag(country.status, { compact })}</td>` : ""}
           <td>${utilizationCell(country)}</td>
           <td>${trendCell(country)}</td>
         </tr>
@@ -1639,12 +1782,13 @@ function renderHierarchyTable() {
         ${expanderCell(group, group.id, "", groupExpanded)}
         <td>${typeIconCell(group.type || "GROUP", `tiny depth-${depthForType(group.type || "GROUP")}`)}</td>
         <td>${countryWithTag({ country: "Global", legalEntity: group.legalEntity })}</td>
-        <td>${group.clientSegment || "-"}</td>
-        <td>${productCell(group.product)}</td>
+        ${showSegment ? `<td>${truncateWithTitle(group.clientSegment || "-", 12)}</td>` : ""}
+        ${showProduct ? `<td>${productCell(group.product)}</td>` : ""}
         ${nameCell(group, PATH.group(group.id))}
         ${orderedOptional.map((k) => optionalCell(group, 1, k)).join("")}
-        <td class="num-cell">${formatMoney(group, group.exposure || 180)}</td>
-        <td class="num-cell">${formatMoney(group, group.cap || 250)}</td>
+        ${showExposure ? `<td class="num-cell">${formatMoney(group, group.exposure || 180)}</td>` : ""}
+        ${showLimit ? `<td class="num-cell">${formatMoney(group, group.cap || 250)}</td>` : ""}
+        ${showStatus ? `<td>${statusTag(group.status, { compact })}</td>` : ""}
         <td>${utilizationCell(group)}</td>
         <td>${trendCell(group)}</td>
       </tr>`;
@@ -1656,19 +1800,20 @@ function renderHierarchyTable() {
   }
 
   return `
-    <table class="data-table hierarchy-table">
+    <table class="data-table hierarchy-table ${compact ? "compact-table" : ""}">
       <thead><tr>
         <th></th>
-        ${sortableTh("portfolio", "type", "Type")}
-        ${sortableTh("portfolio", "country", "Country")}
-        ${sortableTh("portfolio", "clientSegment", "Segment")}
-        ${sortableTh("portfolio", "product", "Product")}
-        ${sortableTh("portfolio", "name", "Name", "key-col")}
+        ${sortableTh("portfolio", "type", compactHeader("Type", "Typ"))}
+        ${sortableTh("portfolio", "country", compactHeader("Country", "Ctry"))}
+        ${showSegment ? sortableTh("portfolio", "clientSegment", compactHeader("Segment", "Seg")) : ""}
+        ${showProduct ? sortableTh("portfolio", "product", compactHeader("Product", "Prod")) : ""}
+        ${sortableTh("portfolio", "name", compactHeader("Name", "Nm"), "key-col")}
         ${orderedOptional.map((k) => sortableTh("portfolio", k, optionalLabel[k])).join("")}
-        ${sortableTh("portfolio", "exposure", "Exposure (USD)")}
-        ${sortableTh("portfolio", "cap", "Limit (USD)")}
-        ${sortableTh("portfolio", "utilization", "Utilization")}
-        <th>Trend</th></tr></thead>
+        ${showExposure ? sortableTh("portfolio", "exposure", compactHeader("Exposure (USD)", "Expo")) : ""}
+        ${showLimit ? sortableTh("portfolio", "cap", compactHeader("Limit (USD)", "Lmt")) : ""}
+        ${showStatus ? sortableTh("portfolio", "status", compactHeader("Status", "Stat")) : ""}
+        ${sortableTh("portfolio", "utilization", compactHeader("Utilization", "Util"))}
+        <th>${compactHeader("Trend", "Trnd")}</th></tr></thead>
       <tbody>${out.join("") || `<tr><td colspan="${colCount}">No matching records</td></tr>`}</tbody>
     </table>`;
 }
@@ -1925,6 +2070,7 @@ function renderLeftPanel() {
 }
 
 function renderHome() {
+  const compact = isCompactViewport();
   const rows = {
     group: applyCommonFilters(state.data.groupCads),
     country: applyCommonFilters(state.data.countryCads),
@@ -1938,12 +2084,28 @@ function renderHome() {
   );
   const selectedPaging = paginateRows(selectedRows, "home");
   const cols = state.visibleColumns.home;
+  const showType = compact;
+  const showCountry = true;
+  const showProduct = !compact || cols.product;
+  const showSegment = !compact || cols.clientSegment;
+  const showRm = !compact || cols.rm;
+  const showProposer = !compact || cols.businessProposer;
+  const showApprover = !compact || cols.approver;
+  const showId = cols.id;
+  const showLegal = cols.legalEntity;
 
   const selectedTable = selectedPaging.rows.map((r) => `<tr>
-    <td class="key-col"><a href="${openHrefForRow(r, state.homeType)}">${r.name}</a><div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
-    ${cols.id ? `<td>${r.id}</td>` : ""}
-    ${cols.legalEntity ? `<td>${r.legalEntity || "-"}</td>` : ""}
-    <td>${countryCell(r.country)}</td><td>${r.product}</td><td>${r.clientSegment || "-"}</td><td>${participantCell(r, "rm")}</td><td>${participantCell(r, "businessProposer")}</td><td>${participantCell(r, "approver")}</td><td>${statusTag(r.status)}</td>
+    <td class="key-col"><a href="${openHrefForRow(r, state.homeType)}">${truncateWithTitle(r.name, compact ? 24 : 56)}</a><div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
+    ${showType ? `<td title="${attrEscape(state.homeType.toUpperCase())}">${typeIconCell(state.homeType.toUpperCase(), "tiny")}</td>` : ""}
+    ${showId ? `<td>${r.id}</td>` : ""}
+    ${showLegal ? `<td>${r.legalEntity || "-"}</td>` : ""}
+    ${showCountry ? `<td>${countryCell(r.country)}</td>` : ""}
+    ${showProduct ? `<td>${productCell(r.product)}</td>` : ""}
+    ${showSegment ? `<td>${truncateWithTitle(r.clientSegment || "-", 12)}</td>` : ""}
+    ${showRm ? `<td>${participantCell(r, "rm", { compact })}</td>` : ""}
+    ${showProposer ? `<td>${participantCell(r, "businessProposer", { compact })}</td>` : ""}
+    ${showApprover ? `<td>${participantCell(r, "approver", { compact })}</td>` : ""}
+    <td>${statusTag(r.status, { compact })}</td>
   </tr>`).join("");
 
   const metricRows = rows[state.homeType];
@@ -1956,7 +2118,7 @@ function renderHome() {
   const metricStatuses = statusCardsByType[state.homeType] || [];
   const governanceCount = metricRows.filter((x) => Number(x.exposure) / Math.max(1, Number(x.cap || 0)) >= 0.8).length;
   const metricCards = metricStatuses.map((status) => ({
-    label: status,
+    label: compactMetricLabel(status),
     value: metricRows.filter((x) => x.status === status).length
   }));
   const statusText = `${state.homeType.toUpperCase()} / ${state.homeStatus.toUpperCase()}`;
@@ -1981,19 +2143,20 @@ function renderHome() {
         ${renderColumnsToggle("home")}
       </div>
       <p class="muted">Filters Applied: ${state.quickView === "none" ? "Action=All Docs" : state.quickView === "mydocs" ? "Action=My Docs" : "Action=Alerts"}${filterValues("product").length ? ` | Product=${filterValues("product").join(", ")}` : ""}${filterValues("clientSegment").length ? ` | Segment=${filterValues("clientSegment").join(", ")}` : ""}${state.searchTerm ? ` | Search=\"${state.searchTerm}\"` : ""}</p>
-      <table class="data-table">
+      <table class="data-table home-table ${compact ? "compact-table" : ""}">
         <thead><tr>
-          ${sortableTh("home", "name", "Name", "key-col")}
-          ${cols.id ? sortableTh("home", "id", "ID") : ""}
-          ${cols.legalEntity ? sortableTh("home", "legalEntity", "Legal Entity") : ""}
-          ${sortableTh("home", "country", "Country")}
-          ${sortableTh("home", "product", "Product")}
-          ${sortableTh("home", "clientSegment", "Segment")}
-          <th>RM</th>
-          <th>Proposer</th>
-          <th>Approver</th>
-          ${sortableTh("home", "status", "Status")}</tr></thead>
-        <tbody>${selectedTable || `<tr><td colspan="${9 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
+          ${sortableTh("home", "name", compactHeader("Name", "Nm"), "key-col")}
+          ${showType ? sortableTh("home", "type", compactHeader("Type", "Typ")) : ""}
+          ${showId ? sortableTh("home", "id", compactHeader("ID", "ID")) : ""}
+          ${showLegal ? sortableTh("home", "legalEntity", compactHeader("Legal Entity", "Lgl")) : ""}
+          ${showCountry ? sortableTh("home", "country", compactHeader("Country", "Ctry")) : ""}
+          ${showProduct ? sortableTh("home", "product", compactHeader("Product", "Prod")) : ""}
+          ${showSegment ? sortableTh("home", "clientSegment", compactHeader("Segment", "Seg")) : ""}
+          ${showRm ? `<th>${compactHeader("RM", "RM")}</th>` : ""}
+          ${showProposer ? `<th>${compactHeader("Proposer", "Prop")}</th>` : ""}
+          ${showApprover ? `<th>${compactHeader("Approver", "Appr")}</th>` : ""}
+          ${sortableTh("home", "status", compactHeader("Status", "Stat"))}</tr></thead>
+        <tbody>${selectedTable || `<tr><td colspan="${1 + (showType ? 1 : 0) + (showId ? 1 : 0) + (showLegal ? 1 : 0) + (showCountry ? 1 : 0) + (showProduct ? 1 : 0) + (showSegment ? 1 : 0) + (showRm ? 1 : 0) + (showProposer ? 1 : 0) + (showApprover ? 1 : 0) + 1}">No rows</td></tr>`}</tbody>
       </table>
       ${renderPagination("home", selectedPaging)}
     </section>`;
@@ -2003,9 +2166,9 @@ function renderHome() {
       <h2>Credit Approvals</h2>
       
       ${renderViewSubheading("Monitor credit documents at a glance, then refine directly in the selected table view.")}
-      <div class="metric-grid">
+      <div class="metric-grid ${compact ? "compact-one-line" : ""}">
         ${metricCards.map((card) => `<div class="metric"><span>${card.label}</span><strong>${card.value}</strong></div>`).join("")}
-        <div class="metric"><span>Governance Alerts</span><strong>${governanceCount}</strong></div>
+        <div class="metric"><span>${compactMetricLabel("Governance Alerts")}</span><strong>${governanceCount}</strong></div>
       </div>
     </section>
     ${selectedTableHtml}
@@ -2013,8 +2176,16 @@ function renderHome() {
 }
 
 function renderInbox() {
+  const compact = isCompactViewport();
   const term = state.searchTerm.trim().toLowerCase();
   const cols = state.visibleColumns.inbox;
+  const showId = cols.id;
+  const showLegal = cols.legalEntity;
+  const showProduct = !compact || cols.product;
+  const showSegment = !compact || cols.clientSegment;
+  const showRm = !compact || cols.rm;
+  const showProposer = !compact || cols.businessProposer;
+  const showApprover = !compact || cols.approver;
   const rows = sortRows(inboxRows().filter((row) => {
     if (!term) return true;
     const participants = row.participants || {};
@@ -2031,36 +2202,36 @@ function renderInbox() {
   const statusMetricType = state.inboxType === "all" ? null : state.inboxType.toLowerCase();
   const statusMetrics = statusMetricType
     ? statusSetForType(statusMetricType).map((status) => ({
-      label: status,
+      label: compactMetricLabel(status),
       value: rows.filter((x) => x.type === state.inboxType && inboxStatusFor(x) === status).length
     }))
     : [];
   const metricHtml = statusMetricType
     ? `${statusMetrics.map((card) => `<div class="metric"><span>${card.label}</span><strong>${card.value}</strong></div>`).join("")}
-       <div class="metric"><span>Governance Alerts</span><strong>${counts.governanceAlerts}</strong></div>`
-    : `<div class="metric"><span>My Docs</span><strong>${counts.myScope}</strong></div>
-       <div class="metric"><span>Inflight</span><strong>${counts.inflight}</strong></div>
-       <div class="metric"><span>Governance Alerts</span><strong>${counts.governanceAlerts}</strong></div>
-       <div class="metric"><span>Closed</span><strong>${counts.closed}</strong></div>`;
+       <div class="metric"><span>${compactMetricLabel("Governance Alerts")}</span><strong>${counts.governanceAlerts}</strong></div>`
+    : `<div class="metric"><span>${compactMetricLabel("My Docs")}</span><strong>${counts.myScope}</strong></div>
+       <div class="metric"><span>${compactMetricLabel("Inflight")}</span><strong>${counts.inflight}</strong></div>
+       <div class="metric"><span>${compactMetricLabel("Governance Alerts")}</span><strong>${counts.governanceAlerts}</strong></div>
+       <div class="metric"><span>${compactMetricLabel("Closed")}</span><strong>${counts.closed}</strong></div>`;
   const tableRows = inboxPaging.rows.map((r) => `<tr>
-    <td class="key-col"><a href="${openHrefForRow(r, r.type.toLowerCase())}">${r.name}</a><div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
-    <td>${r.type}</td>
-    ${cols.id ? `<td>${r.id}</td>` : ""}
-    ${cols.legalEntity ? `<td>${r.legalEntity || "-"}</td>` : ""}
+    <td class="key-col"><a href="${openHrefForRow(r, r.type.toLowerCase())}">${truncateWithTitle(r.name, compact ? 24 : 56)}</a><div>${idTag(r.id)}${legalEntityTag(r)}</div></td>
+    <td title="${attrEscape(r.type)}">${compact ? typeIconCell(r.type, "tiny") : r.type}</td>
+    ${showId ? `<td>${r.id}</td>` : ""}
+    ${showLegal ? `<td>${r.legalEntity || "-"}</td>` : ""}
     <td>${countryCell(r.country)}</td>
-    <td>${r.product}</td>
-    <td>${r.clientSegment || "-"}</td>
-    <td>${participantCell(r, "rm")}</td>
-    <td>${participantCell(r, "businessProposer")}</td>
-    <td>${participantCell(r, "approver")}</td>
-    <td>${statusTag(inboxStatusFor(r))}</td>
+    ${showProduct ? `<td>${productCell(r.product)}</td>` : ""}
+    ${showSegment ? `<td>${truncateWithTitle(r.clientSegment || "-", 12)}</td>` : ""}
+    ${showRm ? `<td>${participantCell(r, "rm", { compact })}</td>` : ""}
+    ${showProposer ? `<td>${participantCell(r, "businessProposer", { compact })}</td>` : ""}
+    ${showApprover ? `<td>${participantCell(r, "approver", { compact })}</td>` : ""}
+    <td>${statusTag(inboxStatusFor(r), { compact })}</td>
   </tr>`).join("");
 
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Inbox</h2>
       ${renderViewSubheading("Prioritize assigned work quickly, then switch scope and search in the results table card.")}
-      <div class="metric-grid">
+      <div class="metric-grid ${compact ? "compact-one-line" : ""}">
         ${metricHtml}
       </div>
     </section>
@@ -2078,20 +2249,20 @@ function renderInbox() {
         <h3>${state.inboxScope === "my" ? "My Inbox" : "Team Inbox"} | ${state.inboxType} | ${state.inboxStatus === "all" ? "ALL" : state.inboxStatus.toUpperCase()}</h3>
         ${renderColumnsToggle("inbox")}
       </div>
-      <table class="data-table">
+      <table class="data-table inbox-table ${compact ? "compact-table" : ""}">
         <thead><tr>
-          ${sortableTh("inbox", "name", "Name", "key-col")}
-          ${sortableTh("inbox", "type", "Type")}
-          ${cols.id ? sortableTh("inbox", "id", "ID") : ""}
-          ${cols.legalEntity ? sortableTh("inbox", "legalEntity", "Legal Entity") : ""}
-          ${sortableTh("inbox", "country", "Country")}
-          ${sortableTh("inbox", "product", "Product")}
-          ${sortableTh("inbox", "clientSegment", "Segment")}
-          <th>RM</th>
-          <th>Proposer</th>
-          <th>Approver</th>
-          ${sortableTh("inbox", "inboxStatus", "Status")}</tr></thead>
-        <tbody>${tableRows || `<tr><td colspan="${11 + (cols.id ? 1 : 0) + (cols.legalEntity ? 1 : 0)}">No rows</td></tr>`}</tbody>
+          ${sortableTh("inbox", "name", compactHeader("Name", "Nm"), "key-col")}
+          ${sortableTh("inbox", "type", compactHeader("Type", "Typ"))}
+          ${showId ? sortableTh("inbox", "id", compactHeader("ID", "ID")) : ""}
+          ${showLegal ? sortableTh("inbox", "legalEntity", compactHeader("Legal Entity", "Lgl")) : ""}
+          ${sortableTh("inbox", "country", compactHeader("Country", "Ctry"))}
+          ${showProduct ? sortableTh("inbox", "product", compactHeader("Product", "Prod")) : ""}
+          ${showSegment ? sortableTh("inbox", "clientSegment", compactHeader("Segment", "Seg")) : ""}
+          ${showRm ? `<th>${compactHeader("RM", "RM")}</th>` : ""}
+          ${showProposer ? `<th>${compactHeader("Proposer", "Prop")}</th>` : ""}
+          ${showApprover ? `<th>${compactHeader("Approver", "Appr")}</th>` : ""}
+          ${sortableTh("inbox", "inboxStatus", compactHeader("Status", "Stat"))}</tr></thead>
+        <tbody>${tableRows || `<tr><td colspan="${2 + (showId ? 1 : 0) + (showLegal ? 1 : 0) + 1 + (showProduct ? 1 : 0) + (showSegment ? 1 : 0) + (showRm ? 1 : 0) + (showProposer ? 1 : 0) + (showApprover ? 1 : 0) + 1}">No rows</td></tr>`}</tbody>
       </table>
       ${renderPagination("inbox", inboxPaging)}
     </section>
@@ -2099,6 +2270,7 @@ function renderInbox() {
 }
 
 function renderPortfolio() {
+  const compact = isCompactViewport();
   const typeMap = { all: "ALL", group: "GROUP", country: "COUNTRY", cet: "CET", sandbox: "SANDBOX" };
   const statusText = `${typeMap[state.portfolioType] || "ALL"} / ${state.homeStatus.toUpperCase()}`;
   const allRows = applyCommonFilters([
@@ -2121,14 +2293,21 @@ function renderPortfolio() {
     const cap = rows.reduce((sum, row) => sum + Math.max(1, Number(row.cap || row.limit || 1)), 0);
     const utilization = cap ? Math.round((amount / cap) * 100) : 0;
     const miniBars = rows.slice(0, 6).map((row) => Math.round((Number(row.exposure || 0) / Math.max(1, Number(row.cap || 1))) * 100));
-    return { label: segment.label, amount, utilization, miniBars };
+    const shortLabel = segment.label === "SME Business Banking" ? "SMEB" : shortCode(segment.label, 4);
+    return { label: compact ? shortLabel : segment.label, amount, utilization, miniBars };
   });
+  const hasPortfolioFilters = filterValues("country").length || filterValues("clientSegment").length || filterValues("product").length;
+  const portfolioFilters = `
+        ${renderTagMultiSelect("country", "Country")}
+        ${renderTagMultiSelect("clientSegment", "Segment")}
+        ${renderTagMultiSelect("product", "Product")}
+        <button class="btn secondary small portfolio-clear-btn" data-action="reset-table-filters">Clear</button>`;
   dom.viewRoot.innerHTML = `
     <section class="card">
       <h2>Portfolio Monitoring</h2>
       ${renderViewSubheading("Track segment utilization trends first, then apply search and filters directly above the hierarchy table.")}
-      <div class="metric-grid">
-        ${segmentCards.map((card) => `<div class="metric metric-segment"><span>${card.label}</span><strong>$${card.amount.toFixed(1)}m</strong><small>Utilization ${card.utilization}%</small><div class="metric-mini-chart">${card.miniBars.map((v) => `<i style="height:${Math.max(10, Math.min(100, v))}%"></i>`).join("")}</div></div>`).join("")}
+      <div class="metric-grid ${compact ? "compact-one-line" : ""}">
+        ${segmentCards.map((card) => `<div class="metric metric-segment"><span>${card.label}</span><strong>$${card.amount.toFixed(1)}m</strong><small>${compact ? "Util" : "Utilization"} ${card.utilization}%</small><div class="metric-mini-chart">${card.miniBars.map((v) => `<i style="height:${Math.max(10, Math.min(100, v))}%"></i>`).join("")}</div></div>`).join("")}
       </div>
     </section>
     <section class="card">
@@ -2138,10 +2317,9 @@ function renderPortfolio() {
         <button class="btn secondary small" data-action="reset-search">Reset</button>
       </div>
       <div class="table-filter-row portfolio-filter-row">
-        ${renderTagMultiSelect("country", "Country")}
-        ${renderTagMultiSelect("clientSegment", "Segment")}
-        ${renderTagMultiSelect("product", "Product")}
-        <button class="btn secondary small portfolio-clear-btn" data-action="reset-table-filters">Clear</button>
+        ${compact ? `<button class="btn secondary small ${state.portfolioFiltersOpen ? "active" : ""}" data-action="toggle-portfolio-filters">${state.portfolioFiltersOpen ? "Hide Filters" : "Filters"}</button>` : ""}
+        ${(!compact || state.portfolioFiltersOpen) ? portfolioFilters : ""}
+        ${compact && hasPortfolioFilters && !state.portfolioFiltersOpen ? `<button class="btn secondary small portfolio-clear-btn" data-action="reset-table-filters">Clear</button>` : ""}
       </div>
       <div class="panel-head">
         <h3>Selected View: ${statusText}</h3>
@@ -3189,6 +3367,7 @@ function renderCreateCetDrawer() {
 
 function render() {
   state.route = parseRoute();
+  applyResponsiveColumnDefaults();
   const compactDevice = window.matchMedia("(max-width: 1024px)").matches;
   const routeChanged = state.lastRouteView !== state.route.view;
   if (state.route.view === "group") state.homeType = "group";
@@ -3207,6 +3386,7 @@ function render() {
     state.mobileSectionsOpen = false;
     state.mobileTraceOpen = state.route.view !== "home";
     state.openColumnMenu = "";
+    if (state.route.view === "portfolio") state.portfolioFiltersOpen = false;
   }
   if (compactDevice) {
     dom.leftPanel.classList.add("collapsed");
@@ -3476,6 +3656,10 @@ function initEvents() {
         state.filters.clientSegment = [];
         state.filters.cluster = "";
         state.filters.country = [];
+        render();
+      }
+      if (action === "toggle-portfolio-filters") {
+        state.portfolioFiltersOpen = !state.portfolioFiltersOpen;
         render();
       }
       if (action === "expand-all") {
