@@ -13,6 +13,17 @@
       <p id="breadcrumb" class="breadcrumb">Credit Approvals</p>
     </div>
     <div class="actions" id="action-bar">
+      <div class="role-switcher" aria-label="View as role">
+        <label for="topbar-role-select">View as</label>
+        <select id="topbar-role-select">
+          <option value="RM">1st Line RM</option>
+          <option value="BUSINESS_PROPOSER">Proposer</option>
+          <option value="EDITOR_2LOD">2nd Line Editor</option>
+          <option value="APPROVER_2LOD">2nd Line Approver (CCH)</option>
+          <option value="GOVERNANCE_ADMIN">Governance Admin</option>
+          <option value="GLOBAL_HEAD">Global Head</option>
+        </select>
+      </div>
       <button id="save-btn" class="btn secondary">Save Draft</button>
       <button id="validate-btn" class="btn secondary">Validate</button>
       <button id="submit-btn" class="btn primary" disabled>Submit</button>

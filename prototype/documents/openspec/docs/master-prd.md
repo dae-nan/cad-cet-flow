@@ -1,72 +1,104 @@
 # Credit Workspace Master PRD
 
-## 1. Problem Framing
+## 1. Product Intent
 
-Credit Workspace spans CAD/CET/Governance flows across multiple roles, but documentation has historically been fragmented across change-level artifacts. Teams need a single PRD that consolidates intent, scope, behavior, and success criteria while preserving traceability to OpenSpec requirement sources.
+Credit Workspace is a governance decision workspace for CAD/CET flows across 1st-line and 2nd-line actors. This prototype build is intentionally used for discovery: to validate real user journeys, clarify role handoffs, and convert observed behavior into formal requirements.
 
-## 2. Product Goals
+This PRD is functionally driven and outcome-led. OpenSpec remains the requirement source of truth; this PRD consolidates those requirements into one product narrative.
 
-- Provide one authoritative product narrative for all active OpenSpec-delivered capabilities.
-- Ensure every user journey can be traced to specs, scenarios, and relevant UI routes.
-- Improve readiness for implementation, governance review, and onboarding.
+## 2. Problem Framing
 
-## 3. Non-Goals
+Policy & Governance stakeholders need a single operating flow where users can:
+- create and iterate safely in draft,
+- hand off through the correct review chain,
+- enforce approval authority by role and country,
+- preserve auditable commentary and rationale,
+- and keep documentation synchronized with evolving requirements.
 
-- Implementing backend workflow orchestration.
-- Replacing OpenSpec change files as canonical requirement deltas.
-- Finalizing production KPI calculation formulas.
+Without this, teams face inconsistent role behavior, unclear handoffs, and weak traceability between UX, policy logic, and implementation decisions.
 
-## 4. Scope Baseline (as of 2026-03-24)
+## 3. Functional Outcomes (What Users Must Be Able To Do)
 
-This PRD consolidates these active OpenSpec changes:
+1. Discover and triage governance work from Home/Inbox with role-appropriate context.
+2. Switch perspective globally (`View as`) to simulate RM, Proposer, 2LoD Editor, 2LoD Approver (CCH), Governance Admin, and Global Head behavior.
+3. Create/edit CET drafts in 1st line and persist draft progress (prototype local persistence).
+4. Execute explicit handoff flow: `RM -> Proposer -> 2LoD Approver (CCH)`.
+5. Allow 2LoD Editor draft input on 2LoD-owned sections without granting final decision authority.
+6. Enforce 2LoD Approver decision controls only at the submitted stage, with commentary requirements for caveat/reject paths.
+7. Apply country/authority boundaries and delegated governance rules where required.
+8. Keep section ownership legible as `1LoD`/`2LoD` for editing accountability.
+9. Keep PRD, OpenSpec capabilities, and in-app documentation aligned for review and audit.
 
+## 4. Current Scope Baseline (Prototype Discovery)
+
+This PRD consolidates active OpenSpec changes:
 - `codify-prototype-flow-and-evidence`
 - `governance-feedback-ux-alignment`
 - `credit-approval-ux-consistency-phase-2`
 - `align-table-controls-and-workflow-timeline`
+- `policy-governance-admin-clarification-phase-3`
 
-## 5. Functional Requirements (Consolidated)
+## 5. Journey-Driven Requirements
 
-1. Help > Documentation opens a documentation index from the prototype (`documentation-entrypoint`).
-2. Role/stage workflow is explicit for RM, Business Proposer, Approver, and Governance personas.
-3. Home/Inbox/Portfolio and detail surfaces follow consistent interaction and status semantics.
-4. CAD/CET lifecycle and governance feedback loops preserve commentary traceability.
-5. Documentation links maintain requirement-level traceability to OpenSpec specs.
+### J1: Discover and triage work
+- Users can view role-relevant workload in Home/Inbox.
+- Role switches recalculate visible actions and context across routes.
 
-## 6. Non-Functional Requirements
+### J2: Draft and iterate safely
+- 1st-line users can draft and save progress.
+- 2LoD Editor can edit/save 2LoD-owned draft sections and commentary.
 
-- **Traceability:** Each journey/usecase maps to OpenSpec capability requirements and scenarios.
-- **Maintainability:** Timeline and journey maps are generated from structured source data.
-- **Safety:** Viewer prevents path traversal/absolute path access.
-- **Responsiveness:** Documentation and viewer remain usable on desktop and mobile widths.
-- **Auditability:** Key feature intent and evidence references are discoverable from Help > Documentation.
+### J3: Handoff to decisioning
+- RM submits to Proposer.
+- Proposer submits to 2LoD Approver (CCH).
+
+### J4: Governed decision and feedback
+- 2LoD Approver can accept / accept with caveats / reject at submitted stage.
+- Non-accept outcomes require commentary and preserve remediation context.
+
+### J5: Traceability and documentation
+- Requirement changes are mirrored in OpenSpec and docs entrypoint.
+- Evidence artifacts map scenarios to captured prototype behavior.
+
+## 6. Non-Goals
+
+- No backend orchestration finalization in this prototype phase.
+- No production KPI formula finalization in this PRD.
+- No replacement of OpenSpec change artifacts as delta-level records.
 
 ## 7. Success Metrics
 
-- 100% of persona timeline entries resolve to OpenSpec spec links.
-- 100% of JTBD usecases include ideal and edge-case scenarios.
-- 100% of usecases include sample data and route links when applicable.
-- Documentation update cycle time reduced by eliminating manual timeline drift.
+- 100% of targeted role-handoff scenarios are covered by acceptance evidence.
+- 100% of required workflow transitions map to explicit role/stage requirements.
+- 100% of capability changes are reflected in docs + OpenSpec links.
+- Reduced ambiguity in stakeholder review cycles (fewer unresolved requirement disputes per cycle).
 
-## 8. OKRs
+## 8. OKRs (Functionally Driven)
 
-### Objective 1: Make product documentation implementation-ready
-- KR1: Publish complete master PRD and design/JTBD/data docs in Help > Documentation.
-- KR2: Ensure all timeline entries are data-driven from a single source file.
-- KR3: Achieve zero broken links for viewer-backed documents.
+### Objective 1: Make role handoffs operationally clear and testable
+- KR1: Demonstrate complete `RM -> Proposer -> CCH` flow with captured evidence.
+- KR2: Demonstrate separated `2LoD Editor` vs `2LoD Approver` behavior with authority boundaries.
+- KR3: Ensure missing-commentary decision constraints are demonstrably enforced.
 
-### Objective 2: Strengthen requirements traceability
-- KR1: Every usecase record links to at least one OpenSpec capability spec.
-- KR2: Every usecase includes data-design notes and sample payloads.
-- KR3: Governance and product stakeholders can review end-to-end journeys in one page.
+### Objective 2: Improve draft collaboration without reducing governance control
+- KR1: Enable deterministic draft save/resume behavior for 1st-line and 2LoD editor roles in prototype.
+- KR2: Keep section ownership understandable using `1LoD`/`2LoD` annotations.
+- KR3: Preserve decision-stage controls exclusively for approver roles.
+
+### Objective 3: Keep discovery artifacts decision-ready
+- KR1: Maintain one synchronized narrative across PRD, OpenSpec specs, tasks, and evidence manifest.
+- KR2: Keep documentation links and capability references review-ready with zero critical gaps.
+- KR3: Ensure each accepted requirement has corresponding scenario-level evidence.
 
 ## 9. Dependencies and Risks
 
-- Dependency on continued OpenSpec hygiene for spec updates.
-- Risk of stale records if source JSON is not updated alongside new changes.
+- Dependency on continuous OpenSpec hygiene for new deltas.
+- Risk of stale discovery conclusions if evidence artifacts are not refreshed after behavior changes.
+- Risk of overfitting prototype-only behaviors without explicit production transition notes.
 
 ## 10. Traceability Index
 
 - Documentation index: `index.html`
 - Viewer contract: `viewer.html?doc=<relative-markdown-path>`
 - Structured source: `data/persona-jtbd-usecases.json`
+- OpenSpec change source: `openspec/changes/policy-governance-admin-clarification-phase-3/`

@@ -45,7 +45,22 @@ body {
 .breadcrumb a { color: var(--primary); text-decoration: none; }
 .breadcrumb span { margin: 0 0.3rem; color: var(--muted); }
 
-.actions { display: flex; gap: 0.45rem; }
+.actions { display: flex; gap: 0.45rem; flex-wrap: wrap; justify-content: flex-end; }
+.role-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-right: 0.35rem;
+}
+.role-switcher label {
+  font-size: 0.84rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.role-switcher select {
+  min-width: 170px;
+  padding: 0.4rem 0.55rem;
+}
 .btn {
   border: 1px solid var(--line);
   border-radius: 9px;

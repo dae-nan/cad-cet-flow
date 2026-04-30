@@ -147,6 +147,7 @@ const state = {
     issueId: ""
   },
   previousIssueCount: 0,
+  lastAppliedDraftKey: "",
   actor: {
     role: "RM",
     name: "Country RM",
@@ -181,7 +182,8 @@ const dom = {
   helpFab: document.getElementById("help-fab"),
   backTopFab: document.getElementById("backtop-fab"),
   createCetDrawer: document.getElementById("create-cet-drawer"),
-  governanceModal: document.getElementById("governance-modal")
+  governanceModal: document.getElementById("governance-modal"),
+  topbarRoleSelect: document.getElementById("topbar-role-select")
 };
 
 const TABLE_PAGE_SIZE = {
@@ -205,8 +207,19 @@ const PATH = {
 const ACTOR_ROLES = {
   RM: "RM",
   BUSINESS_PROPOSER: "BUSINESS_PROPOSER",
+  EDITOR_2LOD: "EDITOR_2LOD",
   APPROVER_2LOD: "APPROVER_2LOD",
-  GOVERNANCE_ADMIN: "GOVERNANCE_ADMIN"
+  GOVERNANCE_ADMIN: "GOVERNANCE_ADMIN",
+  GLOBAL_HEAD: "GLOBAL_HEAD"
+};
+
+const ROLE_DEFAULTS = {
+  [ACTOR_ROLES.RM]: { region: "Regional", country: "", product: "", clientSegment: "", countries: [] },
+  [ACTOR_ROLES.BUSINESS_PROPOSER]: { region: "Regional", country: "", product: "", clientSegment: "", countries: [] },
+  [ACTOR_ROLES.EDITOR_2LOD]: { region: "Regional", country: "", product: "", clientSegment: "", countries: [] },
+  [ACTOR_ROLES.APPROVER_2LOD]: { region: "Regional", country: "", product: "", clientSegment: "", countries: [] },
+  [ACTOR_ROLES.GOVERNANCE_ADMIN]: { region: "Global", country: "All Countries", product: "All Products", clientSegment: "All Segments", countries: ["*"] },
+  [ACTOR_ROLES.GLOBAL_HEAD]: { region: "Global", country: "All Countries", product: "All Products", clientSegment: "All Segments", countries: ["*"] }
 };
 
 const WORKFLOW_STAGES = {
@@ -343,9 +356,9 @@ function normalizeAllStatuses(data) {
 
 function workflowStageLabel(stage) {
   const map = {
-    [WORKFLOW_STAGES.DRAFT_RM]: "Draft - RM Working",
+    [WORKFLOW_STAGES.DRAFT_RM]: "Draft - 1st Line Working",
     [WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER]: "Draft - Proposer Review",
-    [WORKFLOW_STAGES.SUBMITTED_2LOD]: "Submitted to 2nd Line",
+    [WORKFLOW_STAGES.SUBMITTED_2LOD]: "Submitted to 2nd Line Approver (CCH)",
     [WORKFLOW_STAGES.DECISION_ACCEPTED]: "2nd Line Decision - Accepted",
     [WORKFLOW_STAGES.DECISION_ACCEPTED_CAVEATS]: "2nd Line Decision - Accepted with Caveats",
     [WORKFLOW_STAGES.DECISION_REJECTED]: "2nd Line Decision - Rejected",
@@ -359,8 +372,10 @@ function actorRoleLabel(role) {
   const map = {
     [ACTOR_ROLES.RM]: "1st Line RM",
     [ACTOR_ROLES.BUSINESS_PROPOSER]: "Proposer",
-    [ACTOR_ROLES.APPROVER_2LOD]: "Approver",
-    [ACTOR_ROLES.GOVERNANCE_ADMIN]: "Governance Admin"
+    [ACTOR_ROLES.EDITOR_2LOD]: "2nd Line Editor",
+    [ACTOR_ROLES.APPROVER_2LOD]: "2nd Line Approver (CCH)",
+    [ACTOR_ROLES.GOVERNANCE_ADMIN]: "Governance Admin",
+    [ACTOR_ROLES.GLOBAL_HEAD]: "Global Head"
   };
   return map[role] || role;
 }
@@ -382,10 +397,12 @@ function stageFromStatus(status, type = "child") {
 function defaultParticipants(row) {
   const rm = row.rm || row.owner || "Country RM";
   const bp = row.businessProposer || `Proposer - ${row.country || "Region"}`;
-  const approver = row.approver || row.secondLineApprover || "Approver CCO";
+  const editor = row.editor || row.secondLineEditor || "2LoD Editor";
+  const approver = row.approver || row.secondLineApprover || "Country Credit Head";
   return {
     rm,
     businessProposer: bp,
+    editor: editor,
     approver: approver,
     governanceAdmin: "Governance Ops"
   };
@@ -396,8 +413,10 @@ function ensureWorkflowRow(row, type = "child") {
   const participants = {
     ...defaultParticipants(row),
     ...existingParticipants,
+    editor: existingParticipants.editor || existingParticipants.secondLineEditor || defaultParticipants(row).editor,
     approver: existingParticipants.approver || existingParticipants.secondLineApprover || defaultParticipants(row).approver
   };
+  delete participants.secondLineEditor;
   delete participants.secondLineApprover;
   const workflow = row.workflow || {
     stage: stageFromStatus(row.status, type),
@@ -423,8 +442,79 @@ function currentActorNameForRole(role, row) {
   const p = row?.participants || defaultParticipants(row || {});
   if (role === ACTOR_ROLES.RM) return p.rm;
   if (role === ACTOR_ROLES.BUSINESS_PROPOSER) return p.businessProposer;
+  if (role === ACTOR_ROLES.EDITOR_2LOD) return p.editor;
   if (role === ACTOR_ROLES.APPROVER_2LOD) return p.approver;
+  if (role === ACTOR_ROLES.GLOBAL_HEAD) return "Global Head";
   return p.governanceAdmin;
+}
+
+function actorScopeCountries() {
+  if (!state.actor) return new Set();
+  const countries = state.actor.countries || [];
+  return new Set(countries);
+}
+
+function rowInActorCountryScope(row) {
+  const scope = actorScopeCountries();
+  if (!scope.size || scope.has("*")) return true;
+  return scope.has(row.country);
+}
+
+function isGovernanceAlertRow(row) {
+  const util = Number(row.exposure) / Math.max(1, Number(row.cap || 0));
+  return Number.isFinite(util) && util >= 0.8;
+}
+
+function roleOwnsWorkflowStage(role, row) {
+  const stage = row?.workflow?.stage;
+  if (role === ACTOR_ROLES.RM) return stage === WORKFLOW_STAGES.DRAFT_RM || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM;
+  if (role === ACTOR_ROLES.BUSINESS_PROPOSER) return stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER;
+  if (role === ACTOR_ROLES.EDITOR_2LOD) {
+    if ((row.participants || {}).editor !== state.actor.name) return false;
+    return stage === WORKFLOW_STAGES.DRAFT_RM
+      || stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER
+      || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM
+      || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER;
+  }
+  if (role === ACTOR_ROLES.APPROVER_2LOD) {
+    if ((row.participants || {}).approver !== state.actor.name) return false;
+    return stage === WORKFLOW_STAGES.SUBMITTED_2LOD;
+  }
+  if (role === ACTOR_ROLES.GOVERNANCE_ADMIN || role === ACTOR_ROLES.GLOBAL_HEAD) return isGovernanceAlertRow(row) || stage === WORKFLOW_STAGES.SUBMITTED_2LOD;
+  return false;
+}
+
+function actorHasCountryApprovalAuthority(row) {
+  if (state.actor.role !== ACTOR_ROLES.APPROVER_2LOD) return false;
+  return rowInActorCountryScope(row);
+}
+
+function hasDelegatedEditGrant(row) {
+  const grants = state.data?.delegatedEditGrants || [];
+  const now = Date.now();
+  return grants.some((g) => {
+    if (!g || g.role !== ACTOR_ROLES.GLOBAL_HEAD) return false;
+    if (g.revokedAt) return false;
+    if (g.expiry && new Date(g.expiry).getTime() < now) return false;
+    if (!g.scopeCountries || g.scopeCountries.includes("*")) return true;
+    return g.scopeCountries.includes(row.country);
+  });
+}
+
+function syncActorProfile(role, row) {
+  const user = state.data.userProfile || {};
+  const defaults = ROLE_DEFAULTS[role] || ROLE_DEFAULTS[ACTOR_ROLES.RM];
+  const fallbackCountry = state.data.countryCads?.[0]?.country || "Singapore";
+  const userCountries = (user.countries && user.countries.length ? user.countries : [fallbackCountry]).filter(Boolean);
+  const countryForRole = role === ACTOR_ROLES.GOVERNANCE_ADMIN || role === ACTOR_ROLES.GLOBAL_HEAD
+    ? "All Countries"
+    : userCountries[0];
+  state.actor.region = role === ACTOR_ROLES.GOVERNANCE_ADMIN || role === ACTOR_ROLES.GLOBAL_HEAD ? defaults.region : (user.cluster || defaults.region);
+  state.actor.country = countryForRole || defaults.country;
+  state.actor.product = role === ACTOR_ROLES.GOVERNANCE_ADMIN || role === ACTOR_ROLES.GLOBAL_HEAD ? defaults.product : (state.data.countryCads?.[0]?.product || defaults.product || "Credit Cards");
+  state.actor.clientSegment = role === ACTOR_ROLES.GOVERNANCE_ADMIN || role === ACTOR_ROLES.GLOBAL_HEAD ? defaults.clientSegment : (state.data.countryCads?.[0]?.clientSegment || defaults.clientSegment || "Retail");
+  state.actor.countries = role === ACTOR_ROLES.GOVERNANCE_ADMIN || role === ACTOR_ROLES.GLOBAL_HEAD ? ["*"] : userCountries;
+  state.actor.name = currentActorNameForRole(role, row);
 }
 
 function applyCommonFilters(rows, opts = {}) {
@@ -435,8 +525,7 @@ function applyCommonFilters(rows, opts = {}) {
   return rows.filter((row) => {
     const myDocsActive = state.filters.myDocs || state.quickView === "mydocs";
     if (myDocsActive) {
-      const p = state.data.userProfile;
-      if (row.cluster !== p.cluster && !(p.countries || []).includes(row.country)) return false;
+      if (!rowInActorCountryScope(row) && row.cluster !== state.actor.region) return false;
     }
     if (state.quickView === "governancealerts") {
       const util = Number(row.exposure) / Math.max(1, Number(row.cap || 0));
@@ -458,18 +547,18 @@ function applyCommonFilters(rows, opts = {}) {
 }
 
 function isMyScopeRow(row) {
-  if (row.createdByCurrentUser) return true;
-  const p = state.data.userProfile;
-  if (!p) return false;
-  return row.cluster === p.cluster || (p.countries || []).includes(row.country);
+  if (!rowInActorCountryScope(row)) return false;
+  if (row.createdByCurrentUser && (state.actor.role === ACTOR_ROLES.RM || state.actor.role === ACTOR_ROLES.BUSINESS_PROPOSER)) return true;
+  return roleOwnsWorkflowStage(state.actor.role, row);
 }
 
 function isAssignedToMeRow(row) {
-  return isMyScopeRow(row) || row.status === "INFLIGHT" || row.status === "APPROVING";
+  if (!rowInActorCountryScope(row)) return false;
+  return isMyScopeRow(row);
 }
 
 function teamScopeProducts() {
-  const countries = new Set(state.data.userProfile?.countries || []);
+  const countries = actorScopeCountries();
   const products = new Set();
   [
     ...state.data.groupCads,
@@ -477,15 +566,15 @@ function teamScopeProducts() {
     ...state.data.cets,
     ...state.data.sandboxes
   ].forEach((row) => {
-    if (!countries.size || countries.has(row.country)) products.add(row.product);
+    if (!countries.size || countries.has("*") || countries.has(row.country)) products.add(row.product);
   });
   return [...products];
 }
 
 function isAssignedToTeamRow(row) {
-  const countries = new Set(state.data.userProfile?.countries || []);
+  const countries = actorScopeCountries();
   const products = teamScopeProducts();
-  const countryMatch = countries.size === 0 || countries.has(row.country);
+  const countryMatch = countries.size === 0 || countries.has("*") || countries.has(row.country);
   const productMatch = products.length === 0 || products.includes(row.product);
   return countryMatch && productMatch;
 }
@@ -802,7 +891,7 @@ function sectionOwnerMeta(row, sectionId) {
   const hit = (row.sectionOwnership || []).find((x) => x.sectionId === sectionId);
   const explicit = sectionActorRole(sectionId);
   return {
-    ownerRole: explicit || hit?.ownerRole || "RM",
+    ownerRole: explicit || hit?.ownerRole || "1LOD",
     currentEditor: hit?.currentEditor || null,
     lastEditedAt: hit?.lastEditedAt || null
   };
@@ -810,11 +899,11 @@ function sectionOwnerMeta(row, sectionId) {
 
 function sectionActorRole(sectionId) {
   if (sectionId === "cet-approvals-2lod") return "2LOD";
-  if (sectionId === "cet-approvals-1lod") return "BUSINESS_PROPOSER";
+  if (sectionId === "cet-approvals-1lod") return "1LOD";
   if (sectionId === "cet-commentary") return "2LOD";
-  if (sectionId.startsWith("cet-")) return "RM";
-  if (sectionId.startsWith("sbx-")) return "RM";
-  return "RM";
+  if (sectionId.startsWith("cet-")) return "1LOD";
+  if (sectionId.startsWith("sbx-")) return "1LOD";
+  return "1LOD";
 }
 
 function canEditSection(row, sectionId) {
@@ -822,20 +911,26 @@ function canEditSection(row, sectionId) {
   const sectionRole = sectionActorRole(sectionId);
   const actor = state.actor.role;
   if (actor === ACTOR_ROLES.GOVERNANCE_ADMIN) return false;
-  if (sectionRole === "2LOD") return actor === ACTOR_ROLES.APPROVER_2LOD;
-  if (sectionRole === "BUSINESS_PROPOSER") return actor === ACTOR_ROLES.BUSINESS_PROPOSER;
-  if (stage === WORKFLOW_STAGES.SUBMITTED_2LOD) return false;
-  if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) return actor === ACTOR_ROLES.BUSINESS_PROPOSER;
-  return actor === ACTOR_ROLES.RM;
+  if (actor === ACTOR_ROLES.GLOBAL_HEAD) return hasDelegatedEditGrant(row);
+  if (sectionRole === "2LOD") {
+    if (actor === ACTOR_ROLES.EDITOR_2LOD) {
+      return stage === WORKFLOW_STAGES.DRAFT_RM
+        || stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER
+        || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM
+        || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER;
+    }
+    return actor === ACTOR_ROLES.APPROVER_2LOD && stage === WORKFLOW_STAGES.SUBMITTED_2LOD;
+  }
+  if (sectionRole === "1LOD") {
+    if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) return actor === ACTOR_ROLES.BUSINESS_PROPOSER;
+    return actor === ACTOR_ROLES.RM;
+  }
+  return false;
 }
 
 function ownerBadge(ownerRole) {
-  const cls = ownerRole === "2LOD"
-    ? "owner-2lod"
-    : ownerRole === "BUSINESS_PROPOSER"
-      ? "owner-shared"
-      : "owner-1lod";
-  const label = ownerRole === "BUSINESS_PROPOSER" ? "Proposer" : ownerRole === "2LOD" ? "2LOD" : "RM";
+  const cls = ownerRole === "2LOD" ? "owner-2lod" : "owner-1lod";
+  const label = ownerRole === "2LOD" ? "2LoD" : "1LoD";
   return `<span class="owner-badge ${cls}">${label}</span>`;
 }
 
@@ -866,12 +961,13 @@ function canSubmitCurrentStage(row) {
 function submitButtonText(row) {
   const stage = row?.workflow?.stage;
   if (stage === WORKFLOW_STAGES.DRAFT_RM || stage === WORKFLOW_STAGES.RETURNED_REWORK_RM) return "Submit to Proposer";
-  if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) return "Submit to 2nd Line";
+  if (stage === WORKFLOW_STAGES.DRAFT_BUSINESS_PROPOSER || stage === WORKFLOW_STAGES.RETURNED_REWORK_BUSINESS_PROPOSER) return "Submit to 2nd Line Approver (CCH)";
   return "Submit";
 }
 
 function roleContextText() {
-  return `${actorRoleLabel(state.actor.role)} (${state.actor.region}, ${state.actor.product}, ${state.actor.clientSegment})`;
+  const scope = (state.actor.countries || []).join(", ");
+  return `${actorRoleLabel(state.actor.role)} (${state.actor.region}, ${state.actor.product}, ${state.actor.clientSegment}) | Scope: ${scope || "-"}`;
 }
 
 function renderViewSubheading(text) {
@@ -942,19 +1038,70 @@ function renderWorkflowBanner(row) {
       <div class="stage-role">Role: ${roleContextText()}</div>
     </div>
     ${renderWorkflowTimeline(row)}
-    <div class="table-filter-row">
-      <label for="actor-role-select">Acting as</label>
-      <select id="actor-role-select">
-        <option value="${ACTOR_ROLES.RM}" ${state.actor.role === ACTOR_ROLES.RM ? "selected" : ""}>1st Line RM</option>
-        <option value="${ACTOR_ROLES.BUSINESS_PROPOSER}" ${state.actor.role === ACTOR_ROLES.BUSINESS_PROPOSER ? "selected" : ""}>Proposer</option>
-        <option value="${ACTOR_ROLES.APPROVER_2LOD}" ${state.actor.role === ACTOR_ROLES.APPROVER_2LOD ? "selected" : ""}>Approver</option>
-        <option value="${ACTOR_ROLES.GOVERNANCE_ADMIN}" ${state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN ? "selected" : ""}>Governance Admin</option>
-      </select>
-    </div>
     ${row.workflow?.lastDecision ? `<p class="muted">Last 2nd-line outcome: ${row.workflow.lastDecision}</p>` : ""}
     ${commentEntries.length ? `<div class="warning-note">Section feedback: ${commentEntries.map(([k, v]) => `${k}: ${v}`).join(" | ")}</div>` : ""}
     ${row.workflow?.endCommentary ? `<div class="warning-note">End commentary: ${row.workflow.endCommentary}</div>` : ""}
   </section>`;
+}
+
+function renderTopbarRoleSwitcher() {
+  if (!dom.topbarRoleSelect) return;
+  dom.topbarRoleSelect.value = state.actor.role;
+}
+
+function supportsLocalDraftSave(role) {
+  return role === ACTOR_ROLES.RM || role === ACTOR_ROLES.BUSINESS_PROPOSER || role === ACTOR_ROLES.EDITOR_2LOD;
+}
+
+function activeDraftStorageKey(row) {
+  if (!row || !supportsLocalDraftSave(state.actor.role)) return "";
+  const docType = state.route.view;
+  const docId = row.id || state.route.childId || state.route.countryCadId || state.route.groupCadId || "unknown";
+  return `cw:draft:${docType}:${docId}:${state.actor.role}`;
+}
+
+function collectDraftPayload() {
+  const values = {};
+  dom.viewRoot.querySelectorAll("input[id], textarea[id], select[id]").forEach((el) => {
+    if (!el.id || el.id === "main-search" || el.id === "topbar-role-select") return;
+    if (el.type === "checkbox") values[el.id] = Boolean(el.checked);
+    else values[el.id] = el.value;
+  });
+  return values;
+}
+
+function saveActiveDraftToLocal(row) {
+  const key = activeDraftStorageKey(row);
+  if (!key) return;
+  const payload = {
+    savedAt: new Date().toISOString(),
+    actorRole: state.actor.role,
+    values: collectDraftPayload()
+  };
+  window.localStorage.setItem(key, JSON.stringify(payload));
+}
+
+function applyLocalDraftToForm(row) {
+  const key = activeDraftStorageKey(row);
+  if (!key || state.lastAppliedDraftKey === key) return;
+  const raw = window.localStorage.getItem(key);
+  if (!raw) {
+    state.lastAppliedDraftKey = key;
+    return;
+  }
+  try {
+    const payload = JSON.parse(raw);
+    const values = payload?.values || {};
+    Object.entries(values).forEach(([id, value]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === "checkbox") el.checked = Boolean(value);
+      else el.value = value ?? "";
+    });
+  } catch (_e) {
+    // Ignore invalid local draft payloads and continue rendering.
+  }
+  state.lastAppliedDraftKey = key;
 }
 
 function applySubmitTransition(row) {
@@ -975,6 +1122,9 @@ function renderSecondLineDecisionPanel(row) {
   if (!row?.workflow) return "";
   if (state.actor.role !== ACTOR_ROLES.APPROVER_2LOD) return "";
   if (row.workflow.stage !== WORKFLOW_STAGES.SUBMITTED_2LOD) return "";
+  if (!actorHasCountryApprovalAuthority(row)) {
+    return `<section class="card" id="decision-panel"><h3>2nd Line Decision</h3><p class="warning-note">You do not have approval authority for ${row.country}.</p></section>`;
+  }
   const existing = row.workflow.lastDecision || "";
   const sectionComments = row.workflow.sectionComments || {};
   const sectionA = state.route.view === "sandbox" ? "sbx-guardrails" : "cet-risk";
@@ -2858,6 +3008,11 @@ function setBreadcrumb() {
 }
 
 function recomputeIssues() {
+  if (state.testBypassIssueGate) {
+    state.issueStore = { issues: [], summary: { blockers: 0, errors: 0, warnings: 0, total: 0 } };
+    state.previousIssueCount = 0;
+    return;
+  }
   const inputs = [...dom.viewRoot.querySelectorAll("input, textarea")];
   const issues = [];
   const routeEntity = state.route.view === "group"
@@ -3269,7 +3424,8 @@ function createCetFromDraft() {
     participants: {
       rm: state.data.userProfile?.name || "Country RM",
       businessProposer: `Proposer - ${countryCad.country || "Region"}`,
-      approver: "Approver CCO",
+      editor: "2LoD Editor",
+      approver: "Country Credit Head",
       governanceAdmin: "Governance Ops"
     },
     workflow: {
@@ -3402,19 +3558,21 @@ function render() {
   else if (state.route.view === "group") renderGroupDetail();
   else if (state.route.view === "country") renderCountryDetail();
   else renderCetOrSandbox();
+  applyLocalDraftToForm(activeRouteEntity());
   attachNumberFormatters();
   enforceReadOnlyMode();
 
   const detailRoute = state.route.view === "group" || state.route.view === "country" || state.route.view === "cet" || state.route.view === "sandbox";
-  const showActions = detailRoute;
-  dom.actionBar.style.display = showActions ? "flex" : "none";
+  dom.actionBar.style.display = "flex";
   syncShellLayoutMetrics();
   const active = activeRouteEntity();
   const hideSave = (state.route.view === "group" || state.route.view === "country") && active?.status === "ACTIVE";
-  dom.saveBtn.style.display = hideSave ? "none" : "inline-flex";
+  dom.saveBtn.style.display = detailRoute && !hideSave ? "inline-flex" : "none";
+  dom.validateBtn.style.display = detailRoute ? "inline-flex" : "none";
   dom.submitBtn.textContent = submitButtonText(active);
   dom.submitBtn.disabled = !(active && canSubmitCurrentStage(active));
   dom.submitBtn.style.display = active && canSubmitCurrentStage(active) ? "inline-flex" : "none";
+  renderTopbarRoleSwitcher();
   const noRightPanel = !detailRoute;
   dom.appShell?.classList.toggle("no-right-panel", noRightPanel);
   if (noRightPanel) state.rightPanel.isOpen = false;
@@ -3493,6 +3651,7 @@ function initEvents() {
     const row = activeRouteEntity();
     if (!row?.workflow) return;
     row.workflow.lastSavedAt = new Date().toISOString();
+    saveActiveDraftToLocal(row);
     render();
   });
 
@@ -3546,6 +3705,10 @@ function initEvents() {
     if (decisionBtn) {
       const row = activeRouteEntity();
       if (!row?.workflow || state.actor.role !== ACTOR_ROLES.APPROVER_2LOD) return;
+      if (!actorHasCountryApprovalAuthority(row)) {
+        window.alert(`Approval authority missing for ${row.country}.`);
+        return;
+      }
       const outcome = dom.viewRoot.querySelector('input[name="decision-outcome"]:checked')?.value || "";
       const sectionA = state.route.view === "sandbox" ? "sbx-guardrails" : "cet-risk";
       const sectionB = state.route.view === "sandbox" ? "sbx-evidence" : "cet-financial";
@@ -3734,16 +3897,20 @@ function initEvents() {
 
   dom.viewRoot.addEventListener("change", (event) => {
     const target = event.target;
-    if (target.id === "actor-role-select") {
-      state.actor.role = target.value;
-      const row = activeRouteEntity();
-      state.actor.name = currentActorNameForRole(state.actor.role, row);
-      render();
-    }
+    if (target.id === "actor-role-select") return;
+  });
+
+  dom.topbarRoleSelect?.addEventListener("change", (event) => {
+    const target = event.target;
+    state.actor.role = target.value;
+    const row = activeRouteEntity();
+    syncActorProfile(state.actor.role, row);
+    state.lastAppliedDraftKey = "";
+    render();
   });
 
   dom.createFab?.addEventListener("click", () => {
-    if (state.actor.role === ACTOR_ROLES.APPROVER_2LOD || state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN) {
+    if (state.actor.role === ACTOR_ROLES.EDITOR_2LOD || state.actor.role === ACTOR_ROLES.APPROVER_2LOD || state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN || state.actor.role === ACTOR_ROLES.GLOBAL_HEAD) {
       window.alert("Only 1st line roles can initiate CAD/CET/Sandbox.");
       return;
     }
@@ -3771,7 +3938,7 @@ function initEvents() {
   dom.floatMenu?.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-create-type]");
     if (!btn) return;
-    if (state.actor.role === ACTOR_ROLES.APPROVER_2LOD || state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN) {
+    if (state.actor.role === ACTOR_ROLES.EDITOR_2LOD || state.actor.role === ACTOR_ROLES.APPROVER_2LOD || state.actor.role === ACTOR_ROLES.GOVERNANCE_ADMIN || state.actor.role === ACTOR_ROLES.GLOBAL_HEAD) {
       window.alert("Only 1st line roles can initiate CAD/CET/Sandbox.");
       return;
     }
@@ -3912,16 +4079,48 @@ async function init() {
   normalizeAllStatuses(state.data);
   seedCets(state.data);
   ensureWorkflowData(state.data);
-  state.actor.name = state.data.userProfile?.name || "Country RM";
-  state.actor.country = state.data.userProfile?.countries?.[0] || "Singapore";
-  state.actor.region = state.data.userProfile?.cluster || "Regional";
-  state.actor.product = state.data.countryCads?.[0]?.product || "Credit Cards";
-  state.actor.clientSegment = state.data.countryCads?.[0]?.clientSegment || "Retail";
+  state.data.delegatedEditGrants = state.data.delegatedEditGrants || [];
+  syncActorProfile(state.actor.role, null);
   populateFilters();
   if (!window.location.hash) window.location.hash = PATH.home;
   initEvents();
   syncShellLayoutMetrics();
   render();
 }
+
+// Non-UX test hooks for deterministic Playwright setup in prototype mode.
+const __CW_TEST_MODE = /(?:\?|&)cwTestMode=1(?:&|$)/.test(window.location.search || "");
+window.__CW_TEST_HOOKS = {
+  setCetTestReadyById(cetId) {
+    if (!__CW_TEST_MODE) return { ok: false, reason: "test-mode-disabled" };
+    if (!state?.data?.cets) return { ok: false, reason: "no-data" };
+    const row = state.data.cets.find((x) => x.id === cetId);
+    if (!row) return { ok: false, reason: "no-cet" };
+    row.status = "DRAFT";
+    row.issues = [];
+    row.exposure = 10;
+    row.cap = 100;
+    row.workflow = row.workflow || {};
+    row.workflow.stage = WORKFLOW_STAGES.DRAFT_RM;
+    row.limits = {
+      ...(row.limits || {}),
+      parentCadUtilPct: 10,
+      parentCadThresholdPct: 85,
+      segmentUtilPct: 5,
+      segmentThresholdPct: 20
+    };
+    return { ok: true, id: row.id };
+  },
+  enableIssueGateBypass() {
+    if (!__CW_TEST_MODE) return { ok: false, reason: "test-mode-disabled" };
+    state.testBypassIssueGate = true;
+    return { ok: true };
+  },
+  disableIssueGateBypass() {
+    if (!__CW_TEST_MODE) return { ok: false, reason: "test-mode-disabled" };
+    state.testBypassIssueGate = false;
+    return { ok: true };
+  }
+};
 
 init();
